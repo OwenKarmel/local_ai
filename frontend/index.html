@@ -36,7 +36,12 @@
     #voice-heard { font-size: 14px; color: #fff; min-height: 1.2em; }
     #voice-reply { font-size: 13px; color: #8be28b; min-height: 1.2em; }
     #voice-reply.refused, #voice-reply.error { color: #ff7b7b; }
-    #cmd-form { display: flex; gap: 6px; }
+    #cmd-form { display: flex; gap: 6px; margin-top: 6px; }
+    #text-cmd summary { cursor: pointer; font-size: 13px; color: #9aa; }
+    #text-cmd[open] summary { margin-bottom: 6px; }
+    .log2 { height: 160px; overflow-y: auto; font: 12px ui-monospace, monospace; background: #1b1c22; border-radius: 4px; padding: 8px; }
+    .log2 .entry { margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
+    .log2 .error { color: #ff7b7b; } .log2 .ok { color: #8be28b; } .log2 .info { color: #aab; }
     #cmd-input { flex: 1; background: #1b1c22; color: #eee; border: 1px solid #3b3f52; border-radius: 4px; padding: 7px 8px; font-size: 14px; }
   </style>
 </head>
@@ -54,7 +59,11 @@
       <div id="voice-status"></div>
       <div id="voice-heard"></div>
       <div id="voice-reply"></div>
-      <form id="cmd-form"><input id="cmd-input" placeholder="…or type a command" autocomplete="off"><button type="submit">Send</button></form>
+      <details id="text-cmd">
+        <summary>⌨ Type a command instead</summary>
+        <div id="cmd-out" class="log2"></div>
+        <form id="cmd-form"><input id="cmd-input" placeholder="e.g. lower the gravity" autocomplete="off"><button type="submit">Send</button></form>
+      </details>
       <div><button id="reset-btn">Reset to sample level</button></div>
       <div id="log"></div>
     </div>
@@ -64,5 +73,6 @@
   <script src="sprites.js"></script>
   <script src="game.js"></script>
   <script src="voice.js"></script>
+  <script src="testwin.js"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
   const S = () => window.Sketch2Game;
   const ui = {
     btn: $("talk-btn"), meter: $("mic-level"), status: $("voice-status"), heard: $("voice-heard"),
-    reply: $("voice-reply"), badge: $("listen-badge"), form: $("cmd-form"), input: $("cmd-input"),
+    reply: $("voice-reply"), badge: $("listen-badge"),
   };
 
   let stream = null, recorder = null, chunks = [], startedAt = 0, analyser = null, raf = 0, busy = false;
@@ -95,6 +95,8 @@
     }
   }
 
+  // Shared with testwin.js (typed commands).
+  window.Sketch2Game_playerState = () => playerState();
   function playerState() {
     const sc = S() && S().scene;
     if (!sc || !sc.player || !sc.sys.isActive()) return null;
@@ -146,25 +148,11 @@
   ui.btn.addEventListener("pointerdown", (e) => { e.preventDefault(); startListening(); });
   ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => ui.btn.addEventListener(ev, stopListening));
 
-  const typing = () => document.activeElement === ui.input;
+  const typing = () => ["INPUT", "TEXTAREA"].includes(document.activeElement && document.activeElement.tagName);
   window.addEventListener("keydown", (e) => {
     if ((e.key === "v" || e.key === "V") && !e.repeat && !typing()) { e.preventDefault(); startListening(); }
   });
   window.addEventListener("keyup", (e) => { if ((e.key === "v" || e.key === "V") && !typing()) stopListening(); });
-
-  // Typed commands. Phaser grabs space/arrows, so turn its keyboard off while the box has focus.
-  const gameKeys = (on) => { const sc = S() && S().scene; if (sc && sc.sys.game.input.keyboard) sc.sys.game.input.keyboard.enabled = on; };
-  ui.input.addEventListener("focus", () => gameKeys(false));
-  ui.input.addEventListener("blur", () => gameKeys(true));
-  ui.form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const t = ui.input.value.trim();
-    if (!t || busy) return;
-    ui.input.value = "";
-    ui.input.blur();
-    ui.heard.textContent = `“${t}” (typed)`;
-    sendCommand(t, "typed");
-  });
 
   setStatus("Hold the button or V to talk.");
 })();
