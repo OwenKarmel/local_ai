@@ -1,5 +1,5 @@
 // game.js — Phaser runtime. Builds a level from JSON and runs it.
-// Public API (window.Sketch2Game): loadLevel(levelJson), log(msg, kind), setAppearance(id, {sprite, tint}),
+// Public API (window.Sketch2Game): loadLevel(levelJson), applyPatch(ops, levelJson, label), log(msg, kind), setAppearance(id, {sprite, tint}),
 //   setPlayerLook({sprite, tint}), debugProjectile(sprite, tint), .level, .scene
 // Sprites and effects come from sprites.js (window.SPRITES); see assets/catalog.json.
 (function () {
@@ -58,6 +58,7 @@
       this.lastGroundTime = -9999;
       this.jumpedSinceGround = false;
       this.jumpBufferUntil = 0;
+      this.graceUntil = 0; // after a live change, hazards/enemies can't kill until this time
 
       makeTextures(this);
       S.createAnims(this);
@@ -88,7 +89,7 @@
 
       this.physics.add.collider(this.player, this.platforms);
       this.physics.add.collider(this.enemies, this.platforms);
-      this.physics.add.overlap(this.player, this.hazards, () => this.die("Ouch! Hazard"));
+      this.physics.add.overlap(this.player, this.hazards, () => { if (this.time.now >= this.graceUntil) this.die("Ouch! Hazard"); });
       this.physics.add.overlap(this.player, this.enemies, (p, en) => this.hitEnemy(p, en));
       this.physics.add.overlap(this.player, this.items, (p, it) => this.collect(it));
 
@@ -103,6 +104,8 @@
         .setScrollFactor(0).setDepth(10);
       this.banner = this.add.text(480, 200, "", { fontFamily: "monospace", fontSize: "32px", color: "#fff", stroke: "#000", strokeThickness: 5, align: "center" })
         .setOrigin(0.5).setScrollFactor(0).setDepth(10);
+      this.toast = this.add.text(480, 44, "", { fontFamily: "monospace", fontSize: "18px", color: "#fff", stroke: "#3a2a6a", strokeThickness: 4 })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(10).setAlpha(0);
       this.updateHud();
     }
 
@@ -203,6 +206,163 @@
       return true;
     }
 
+    // ----- live patching (O3): apply LowLevelOps to the running scene, no restart -----
+    // `next` is the full level after the change; ops say what differs. Player, score and power-ups are untouched.
+    applyOps(ops, next, label) {
+      const findDef = (id) => next.entities.find((e) => e.id === id);
+      let globalChange = false;
+      for (const op of ops) {
+        switch (op.op) {
+          case "remove_entity": this.liveRemove(op.id, true); break;
+          case "add_entity": {
+            const def = findDef(op.entity.id) || op.entity;
+            this.avoidPlayer(def);
+            this.liveAdd(def);
+            break;
+          }
+          case "update_entity": this.liveUpdate(op.id, findDef(op.id)); break;
+          case "set_physics": case "set_ability": globalChange = true; break;
+          default: log(`Unknown patch op '${op.op}'`, "error");
+        }
+      }
+      this.level = next;
+      this.physics.world.gravity.y = next.physics.gravity;
+      for (const id in this.byId) { // point every live object at its entity in the new level
+        const d = findDef(id);
+        if (d) { this.byId[id].def = d; this.byId[id].props = d.props || {}; }
+      }
+      this.graceUntil = this.time.now + 700; // don't let a change kill the player on the spot
+      if (globalChange) this.globalPulse();
+      if (label) this.showToast(label);
+      this.updateHud();
+    }
+
+    liveAdd(def) {
+      this.spawnEntity(def);
+      const obj = this.byId[def.id];
+      if (!obj) return;
+      if (def.type === "coin") this.totalCoins++;
+      this.popIn(obj);
+    }
+
+    liveRemove(id, animate) {
+      const obj = this.byId[id];
+      if (!obj) return;
+      const wasActive = obj.active;
+      delete this.byId[id];
+      this.behaving = this.behaving.filter((o) => o !== obj);
+      if (obj.def.type === "coin" && wasActive) this.totalCoins--;
+      if (obj.idleFx) { obj.idleFx.destroy(); obj.idleFx = null; }
+      const visuals = obj.visuals || [];
+      const isZone = obj.type === "Zone";
+      if (isZone) obj.destroy(); // platform/hazard: collision goes away immediately, art fades out
+      else if (obj.body) obj.disableBody(false, false);
+      const targets = isZone ? visuals : [obj];
+      if (!animate || !wasActive) { targets.forEach((t) => t.destroy()); return; }
+      const { cx, cy } = this.defCenter(obj.def);
+      S.fx.burst(cx, cy, 0xffffff, 10);
+      this.tweens.add({
+        targets, alpha: 0, duration: 260, ease: "Quad.easeIn",
+        ...(isZone ? { y: "+=12" } : { scaleX: 0, scaleY: 0 }),
+        onComplete: () => targets.forEach((t) => t.destroy()),
+      });
+    }
+
+    liveUpdate(id, def) {
+      const obj = this.byId[id];
+      if (!def) return;
+      if (!obj) { this.liveAdd(def); return; }
+      if (!obj.active && obj.type !== "Zone") { obj.def = def; obj.props = def.props || {}; return; } // collected/stomped: stays gone
+      const old = obj.def;
+      const moved = ["type", "x", "y", "w", "h"].some((k) => (old[k] ?? 1) !== (def[k] ?? 1));
+      if (moved) { // geometry changed: crossfade old art out, new entity in
+        this.liveRemove(id, true);
+        this.liveAdd(def);
+        return;
+      }
+      obj.def = def;
+      obj.props = def.props || {};
+      obj.disabledBehaviors.clear();
+      const behaves = def.behaviors && def.behaviors.length;
+      if (behaves && !this.behaving.includes(obj)) this.behaving.push(obj);
+      if (!behaves) this.behaving = this.behaving.filter((o) => o !== obj);
+      if (old.sprite !== def.sprite || old.tint !== def.tint) this.skinEntity(obj);
+      this.pulse(obj);
+    }
+
+    // Contract: never spawn anything on top of the player; slide it away tile by tile (x only).
+    avoidPlayer(def) {
+      const p = this.player.body, T = TILE, w = def.w || 1, h = def.h || 1;
+      const hits = (x) => x * T < p.right + T / 2 && (x + w) * T > p.left - T / 2 && def.y * T < p.bottom && (def.y + h) * T > p.top;
+      if (!hits(def.x)) return;
+      const dir = (def.x + w / 2) * T >= p.center.x ? 1 : -1;
+      for (let step = 1; step < this.level.width; step++) {
+        for (const d of [dir, -dir]) {
+          const x = def.x + d * step;
+          if (x >= 0 && x + w <= this.level.width && !hits(x)) {
+            log(`Moved ${def.id} from x=${def.x} to x=${x} so it doesn't land on the player`, "info");
+            def.x = x;
+            return;
+          }
+        }
+      }
+    }
+
+    defCenter(def) {
+      const w = (def.w || 1) * TILE, h = (def.h || 1) * TILE;
+      return { cx: def.x * TILE + w / 2, cy: def.y * TILE + h / 2 };
+    }
+
+    // ----- change animations -----
+    ring(x, y, color = 0xffffff, size = 6) {
+      const c = this.add.circle(x, y, size).setStrokeStyle(3, color).setDepth(7);
+      this.tweens.add({ targets: c, scale: 5, alpha: 0, duration: 420, ease: "Cubic.easeOut", onComplete: () => c.destroy() });
+    }
+
+    popIn(obj) {
+      const { cx, cy } = this.defCenter(obj.def);
+      this.ring(cx, cy, 0xfff2a0, Math.max(6, ((obj.def.w || 1) * TILE) / 6));
+      S.fx.sparkle(cx, cy, 0xfff2a0, 10);
+      if (obj.visuals) {
+        obj.visuals.forEach((v, i) => {
+          const y = v.y;
+          v.setAlpha(0).setY(y - 14);
+          this.tweens.add({ targets: v, alpha: 1, y, duration: 320, delay: i * 30, ease: "Back.easeOut" });
+        });
+      } else {
+        const sx = obj.scaleX, sy = obj.scaleY;
+        obj.setScale(0);
+        this.tweens.add({ targets: obj, scaleX: sx, scaleY: sy, duration: 380, ease: "Back.easeOut" });
+      }
+    }
+
+    pulse(obj) {
+      const { cx, cy } = this.defCenter(obj.def);
+      const x = obj.visuals ? cx : obj.x, y = obj.visuals ? cy : obj.y;
+      this.ring(x, y, 0x9fe8ff);
+      S.fx.sparkle(x, y, 0x9fe8ff, 6);
+      if (obj.visuals) this.tweens.add({ targets: obj.visuals, alpha: 0.4, duration: 110, yoyo: true, repeat: 1 });
+      else this.tweens.add({ targets: obj, scaleX: obj.scaleX * 1.3, scaleY: obj.scaleY * 1.3, duration: 120, yoyo: true, ease: "Quad.easeOut" });
+    }
+
+    // Physics or ability change: shockwave around the player plus a quick camera bump.
+    globalPulse() {
+      const p = this.player;
+      this.ring(p.x, p.y, 0xb48cff, 10);
+      this.time.delayedCall(120, () => this.ring(p.x, p.y, 0xffffff, 8));
+      S.fx.sparkle(p.x, p.y, 0xd9c8ff, 14);
+      const cam = this.cameras.main;
+      this.tweens.add({ targets: cam, zoom: 1.05, duration: 110, yoyo: true, ease: "Quad.easeOut" });
+    }
+
+    showToast(text) {
+      const t = this.toast;
+      this.tweens.killTweensOf(t);
+      t.setText("★ " + text).setAlpha(0).setY(30);
+      this.tweens.add({ targets: t, alpha: 1, y: 44, duration: 220, ease: "Back.easeOut" });
+      this.tweens.add({ targets: t, alpha: 0, duration: 400, delay: 2000 });
+    }
+
     hitEnemy(p, en) {
       if (this.dead || !en.active) return;
       const stomp = p.body.velocity.y > 0 && p.body.bottom <= en.body.top + 14;
@@ -210,7 +370,7 @@
         S.fx.burst(en.x, en.y, en.tintColor ?? 0xe9dcff, 12);
         en.disableBody(true, true);
         p.setVelocityY(-this.level.physics.jump_velocity * 0.6);
-      } else {
+      } else if (this.time.now >= this.graceUntil) {
         this.die("Got hit by an enemy");
       }
     }
@@ -336,6 +496,24 @@
     if (scene) scene.scene.restart();
   }
 
+  // Apply a /api/command patch to the running game without restarting. `level` is the full level after the
+  // change (response.level). Falls back to a full reload if live apply throws. Returns true if applied live.
+  function applyPatch(ops, level, label) {
+    const next = structuredClone(level);
+    const scene = activeScene();
+    if (!scene || scene.dead) { currentLevel = next; return false; } // a restart is coming anyway
+    try {
+      scene.applyOps(ops || [], next, label);
+      currentLevel = next;
+      log(`Applied ${ops.length} change(s) live`, "ok");
+      return true;
+    } catch (err) {
+      log(`Live apply failed (${err.message}); reloading level`, "error");
+      loadLevel(next);
+      return false;
+    }
+  }
+
   let game = null;
   async function boot() {
     const [res] = await Promise.all([fetch("/api/level"), S.init()]);
@@ -358,7 +536,7 @@
   });
 
   window.Sketch2Game = {
-    loadLevel, log,
+    loadLevel, applyPatch, log,
     // Live look changes (no restart). Unknown sprite names fall back to the type's default.
     setAppearance(id, changes) { const s = activeScene(); return s ? s.setAppearance(id, changes) : false; },
     setPlayerLook(look) { playerLook = { ...playerLook, ...look }; const s = activeScene(); if (s) s.skinPlayer(); },
