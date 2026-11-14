@@ -3,32 +3,39 @@ import json
 
 from .summary import summary_text
 
-INTENT_SYSTEM = """You edit levels for a 2D side-scrolling platformer by choosing high-level edit operations.
+INTENT_SYSTEM = """You are a game copilot. You change a 2D side-scrolling platformer by choosing high-level edit operations.
 You never write coordinates: the game engine works out exact positions and keeps everything inside the level.
 
-You get a LEVEL SUMMARY (ground platforms, gaps, floating platforms, objects, each with an id) and a COMMAND.
+You get a LEVEL SUMMARY (ground, gaps, floating platforms, objects, each with an id) and a COMMAND.
 
 OPERATIONS
 - {"op":"widen_gap","gap_id":"gap1","tiles":2}  make a gap wider (negative = narrower; minus its width closes it)
-- {"op":"shrink_platform","id":"plat1","tiles":1,"side":"both"}  make a platform narrower (negative = wider). side: left, right, both
-- {"op":"add_enemy","region":"end","count":2,"speed":60}  region: start, middle, end, or a platform id. Normal speed 60, fast 100+
-- {"op":"add_hazard_near","platform_id":"ground2","kind":"spikes","width":1,"side":"auto"}  spikes or lava on top of that platform, near an edge
+- {"op":"shrink_platform","id":"plat1","tiles":1,"side":"both"}  narrower (negative = wider). side: left, right, both
+- {"op":"add_enemy","region":"ahead","count":2,"speed":60}  normal speed 60, fast 100+
+- {"op":"add_hazard_near","platform_id":"ground2","kind":"spikes","width":1,"side":"auto"}  spikes or lava on top of that platform
 - {"op":"add_coins","region":"middle","count":3}
 - {"op":"remove","id":"enemy2"}
 - {"op":"set_property","id":"enemy1","key":"speed","value":90}  enemy keys: speed, range (patrol distance in tiles)
-- {"op":"set_physics","key":"jump_velocity","value":640}  keys: gravity, jump_velocity, run_speed
+- {"op":"set_physics","key":"gravity","value":900}  keys: gravity (default 1200), jump_velocity (560), run_speed (200)
+- {"op":"set_ability","ability":"fireball","settings":{"enabled":true}}  optional settings: speed, cooldown_ms, bounces
+- {"op":"unsupported","reason":"..."}  ONLY if the command asks for something none of the operations above can do
+
+REGIONS: start, middle, end, or a platform id. While the PLAYER line is present, also:
+  near_player = a few tiles right in front of the player; ahead = the stretch ahead of the player.
 
 RULES
-- Use only ids that appear in the summary.
-- Do what the command asks with a sensible, modest change: "a bit" = 1 tile or about 15%; "bigger"/"more" = 1-2 tiles or about 30%; "a lot" = 3 tiles or about 60%.
-- Plural ("the gaps", "the enemies") means one op for EACH matching id in the summary.
-- "Near the end/start/middle" means that region.
+- Use only ids from the summary.
+- Sensible, modest changes: "a bit" = 1 tile or about 15%; "bigger"/"more"/"lower" = 1-2 tiles or about 25%; "a lot" = 3 tiles or about 50%.
+- Plural ("the gaps", "the enemies") means one op for EACH matching id. Use at most 6 ops.
+- Gap size: ALWAYS use widen_gap (positive = bigger, negative = smaller). shrink_platform is only for "make a platform smaller/bigger".
+- Harder: wider gaps (+1), more or faster enemies, spikes. Easier: narrower gaps (negative widen_gap), slower or fewer enemies, remove hazards.
+- While the player is playing, "this", "here", "in front of me", "ahead", "next", and "make it harder/easier" mean what is AHEAD of the player (items marked [ahead], the next gap, region "ahead"). Never edit things [behind the player] for these.
 
 Reply with ONLY JSON: {"explanation": "<one short sentence>", "ops": [ ... ]}"""
 
 _EX_LEVEL = {
     "name": "example", "tile_size": 32, "width": 30, "height": 15,
-    "physics": {"gravity": 1200, "jump_velocity": 560, "run_speed": 200},
+    "physics": {"gravity": 1200, "jump_velocity": 560, "run_speed": 200}, "abilities": {},
     "spawn": {"x": 1, "y": 12},
     "entities": [
         {"id": "g1", "type": "platform", "x": 0, "y": 13, "w": 10, "h": 2, "behaviors": [], "props": {}},
@@ -40,36 +47,38 @@ _EX_LEVEL = {
         {"id": "goal", "type": "goal", "x": 28, "y": 11, "w": 1, "h": 2, "behaviors": [], "props": {}},
     ],
 }
+_EX_PLAYER = {"x": 13, "y": 12, "has_double_jump": False}
 EXAMPLES = [
-    ("make the gaps a lot bigger and put an enemy near the end", {
-        "explanation": "Both gaps widened by 3 tiles and one enemy added in the end region.",
+    ("make the gaps a lot bigger and put an enemy near the end", None, {
+        "explanation": "Both gaps widened by 3 tiles and one enemy added near the end.",
         "ops": [
             {"op": "widen_gap", "gap_id": "gap1", "tiles": 3},
             {"op": "widen_gap", "gap_id": "gap2", "tiles": 3},
             {"op": "add_enemy", "region": "end", "count": 1, "speed": 60},
         ],
     }),
-    ("make the enemies faster, get rid of the coin, and add spikes on the floating platform", {
-        "explanation": "Enemy sped up, coin removed, spikes added on p1.",
+    ("make this harder and give me fireballs", _EX_PLAYER, {
+        "explanation": "Next gap wider, two fast enemies ahead, spikes on the platform ahead, fireballs on.",
         "ops": [
-            {"op": "set_property", "id": "e1", "key": "speed", "value": 90},
-            {"op": "remove", "id": "c1"},
-            {"op": "add_hazard_near", "platform_id": "p1", "kind": "spikes", "width": 1, "side": "auto"},
+            {"op": "widen_gap", "gap_id": "gap2", "tiles": 1},
+            {"op": "add_enemy", "region": "ahead", "count": 2, "speed": 90},
+            {"op": "add_hazard_near", "platform_id": "g3", "kind": "spikes", "width": 1, "side": "auto"},
+            {"op": "set_ability", "ability": "fireball", "settings": {"enabled": True}},
         ],
     }),
 ]
 
 
-def intent_messages(level: dict, command: str) -> list[dict]:
+def intent_messages(level: dict, command: str, player: dict | None = None) -> list[dict]:
     msgs = [{"role": "system", "content": INTENT_SYSTEM}]
-    for cmd, patch in EXAMPLES:
-        msgs.append({"role": "user", "content": f"LEVEL SUMMARY:\n{summary_text(_EX_LEVEL)}\n\nCOMMAND: {cmd}"})
+    for cmd, pl, patch in EXAMPLES:
+        msgs.append({"role": "user", "content": f"LEVEL SUMMARY:\n{summary_text(_EX_LEVEL, pl)}\n\nCOMMAND: {cmd}"})
         msgs.append({"role": "assistant", "content": json.dumps(patch)})
-    msgs.append({"role": "user", "content": f"LEVEL SUMMARY:\n{summary_text(level)}\n\nCOMMAND: {command}"})
+    msgs.append({"role": "user", "content": f"LEVEL SUMMARY:\n{summary_text(level, player)}\n\nCOMMAND: {command}"})
     return msgs
 
 
 def retry_message(errors: list[str]) -> dict:
     lines = "\n".join(f"- {e}" for e in errors)
     return {"role": "user", "content": f"Some of those operations could not be applied:\n{lines}\n\n"
-                                       "Return the whole corrected JSON object (all ops, fixed), nothing else."}
+                                       "Return the whole corrected JSON object (all ops, fixed as described), nothing else."}
