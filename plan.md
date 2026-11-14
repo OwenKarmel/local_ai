@@ -1,31 +1,131 @@
 # plan.md — Voice game copilot (name TBD)
 
-## Summary and pitch
-Cornell Local AI Hackathon, theme "Recreate": rebuild an existing AI app to run fully on-device. Must use Bonsai (PrismML) and Argmax, and run with Wi-Fi off.
+**One goal:** run the demo video script below end to end, reliably, on the demo Mac (Ashwin's) with Wi-Fi off. Everything on the board serves a beat. Core principle (CLAUDE.md): nothing about what a command does is hardcoded; every command goes to Bonsai.
 
-**Pitch:** Rosebud AI lets you edit games by chatting with an AI in the cloud. We recreated that as an offline voice copilot that edits the game live while you play.
+**Pitch:** An offline voice copilot that edits your game while you play. Rosebud AI lets you edit games by chatting with a cloud AI; we recreated that fully on-device with Bonsai (PrismML) and Argmax.
 
-You hold V and say "lower the gravity", "make this harder" or "give me fireballs". The running platformer changes without restarting. The copilot answers out loud, and it refuses any change that would make the level impossible, explaining why.
+Cornell Local AI Hackathon, theme "Recreate". Submissions due noon Sunday: 2-minute video, GitHub link, one-sentence description. Top 10 do a 4-minute live demo for the PrismML and Argmax founders. Never use "Mario" or any Nintendo name in code, UI, docs, narration or captions.
 
-Team: Ashwin (backend, checker) and Owen (frontend, Argmax). Final project name TBD. Never use "Mario" or any Nintendo name in the repo, UI or docs.
+## Final goal: the demo script
+Acceptance checks test properties, not exact outputs, since model output varies. **The level must stay beatable after every beat.** `scripts/demo_check.py` (task 17) automates Beats 3–6.
 
-## Demo script
-1. Start playing the sample level. "Lower the gravity." Jumps get floatier mid-run; the copilot confirms out loud.
-2. "Give me fireballs." Shoot the next enemy.
-3. "Make this harder." Hazards or enemies appear ahead; the copilot says what it added.
-4. "Make the next gap 10 tiles." The copilot refuses and explains why; the HUD shows the reason.
-5. (If built) A friend joins in chaos mode and adds enemies by voice; the player still reaches the flag.
-6. Show Wi-Fi off and the latency/eval table.
+| Beat | What happens | Acceptance check |
+|---|---|---|
+| 1 | Wi-Fi off shown on screen; title and pitch: "An offline voice copilot that edits your game while you play." | Wi-Fi visibly off; every later beat runs with it off |
+| 2 | Play the starting level: a few obstacles, coins, stompable enemies, a flag | Level loads; it's beatable by hand; it has a gap ahead of the player for Beat 6 and open room for Beat 3 |
+| 3 | "Make this harder." Bonsai decides how | `status` applied; every new or changed object is ahead of the player; the checker passes (level still beatable) |
+| 4 | "Give me fireballs." Bonsai writes the ability in mechanics.js using the mechanics API | Code passes the sandbox on attempt 1 or 2; pressing its key spawns a projectile; a projectile defeats an enemy |
+| 5 | Cursor visible with its tile highlighted. Hover and say "put a block here" | A new solid block occupies the cursor tile (or the nearest free tile if the cursor is on something) |
+| 6 | "Make the next gap 10 tiles" is refused and explained out loud. "Let me jump higher." Then a wider-gap request that was impossible before goes through | First: `refused` with a reason naming the jump limit, and spoken. Second: jump physics increased. Third: applied, the gap is wider than the old limit and within the new one, and the checker passes |
+| 7 | Reach the flag | Win screen |
+| 8 | Closing stats: model size, latencies, attempts, lines of code written, evaluation results | Stats HUD and demo-check success rates on screen; all numbers measured |
 
-Notes if asked: "make this harder" / "make it easier" come off a difficulty ladder (A10). Its steps are prepared in the background and verified by the checker, so they apply instantly. Custom requests go to Bonsai live.
+## Task board
+Status: `todo`, `doing (<name>)`, `in review (PR #n)`, `done`. **Claim a task by number in plan.md before starting** (status `doing (<name>)`), one branch and PR per task, keep the review workflow. Tasks marked 🍎 need the demo Mac (MLX models, Argmax, recording).
+
+| # | Task | Beat | Depends on | Files | Done when | Status |
+|---|---|---|---|---|---|---|
+| 1 | Demo starting level: beatable, a few obstacles, coins, stompable enemies, a flag; a gap ahead of the start suitable for Beat 6; open room ahead for Beat 3 | 2 | — | `backend/levels/` | Beaten by hand; demo check Beats 3 and 6 have room to work | todo |
+| 2 | 🍎 Argmax speech-to-text | 3–6 | — | `backend/speech.py`, `backend/main.py` | Real voice transcribes correctly with Wi-Fi off | done (PR #6). Real voice and Wi-Fi-off not verified yet |
+| 3 | Hold-to-talk (button + V key, listening indicator, typed fallback) | 3–6 | 2 | `frontend/voice.js`, `frontend/index.html` | Hold V mid-run, speak, command runs | done (PR #7). Real voice through the browser not verified yet |
+| 4 | Remove hardcoded command handling (see "Hardcoding audit") | all | — | `backend/intents.py`, `backend/prompts.py` | Nothing on the audit list remains | in review (PR #9) |
+| 5 | Mechanics API + compact reference (one line per function) for the prompt: spawn entities and projectiles, physics bodies, velocity, collisions, input keys, timers, entity properties, tint and sprite | 4 | — | `frontend/mechanics.js` (API section), reference text for the prompt | A hand-written test ability of 10–30 lines (not shipped) works using only the API | todo |
+| 6 | Model-written abilities through the sandbox: code only in mechanics.js, syntax check, runtime error capture, automatic rollback, one repair attempt with the error message | 4 | 5, 7 | `backend/` (code route, versions), `frontend/` (load, error capture, rollback) | "Give me fireballs" works on attempt 1 or 2 in at least 4 of 5 demo-check runs | todo |
+| 7 | Live patch application: apply every LowLevelOp to the running scene, keeping player position, velocity, score, power-ups; never spawn on the player; fall back to reload | 3–6 | — | `frontend/game.js` | All op types apply mid-run without restart | todo |
+| 8 | Cursor context: `/api/command` accepts `cursor: {x, y}` in tiles or null, passed to the model as context | 5 | — | `backend/` | "Put a block here" lands on the cursor tile in the demo check | todo |
+| 9 | Cursor overlay: visible pointer plus highlighted tile, sent with every command | 5 | 8 | `frontend/` | Highlight follows the mouse; requests carry `cursor` | todo |
+| 10 | Shared physics config read by game.js and the checker (gravity, jump velocity, run speed, player size, double-jump strength, coyote time, jump buffer, jump cut, max fall speed) | 6 | — | new shared file, `frontend/game.js` | Changing jump velocity in the config changes the game and the checker | todo |
+| 11 | Playability checker and refusals: tile grid, jump arcs matching the game, reachability from spawn and the player position with double-jump state, specific reasons. Interface below. Test level with gaps 4/5/6/7 and heights 2/3/4 verified by hand | 3, 6 | 10 | `backend/checker.py`, `backend/levels/jump_test.json` | Sample passes; a 10-tile gap fails with a clear reason; checker matches the hand test | todo |
+| 12 | Checker reads physics from the current level, so "let me jump higher" immediately changes what's allowed | 6 | 11 | `backend/checker.py` | Beat 6 passes in the demo check | todo |
+| 13 | Player abilities and limits in the prompt: current reach (max gap, max height, with and without double jump) from the current physics, plus the abilities in mechanics.js | 3, 6 | 10 | `backend/prompts.py`, `backend/summary.py` | Prompt numbers change after a physics change | todo |
+| 14 | 🍎 Copilot voice: `/api/speak` with TTSKit (long-running process), refusal vs normal style; immediate spoken acknowledgment ("On it") while the model works | 3–6 | 2 | `backend/`, `frontend/voice.js` | Confirmations and refusals are spoken offline; "On it" plays within 1 s of releasing V | todo |
+| 15 | Stats in the `/api/command` response (contract above) | 8 | — | `backend/pipeline.py`, `backend/main.py` | Every response has `stats`; unmeasured fields are null | todo |
+| 16 | Stats HUD (spec below) | 8, all | 15 | `frontend/` | Readable on video; refusal and rollback banners match what the copilot says | todo |
+| 17 | Demo check script `scripts/demo_check.py` (spec below) | all | 1 | `scripts/` | `--quick`, `--full`, `--beat N --runs K` work; Beat 6 shows "waiting on checker" until 11–12 merge | todo |
+| 18 | Latency work that doesn't hardcode behavior: shorter prompts, compact level summary, prompt caching if the model server supports it, keeping the model loaded and warm | all | — | `backend/prompts.py`, `backend/summary.py`, server flags | Median command latency measured before and after | todo |
+| 19 | 🍎 Offline run of the full flow on the demo Mac | 1 | 2, 3, 14 | — | Every beat runs with Wi-Fi off | todo |
+| 20 | 🍎 Backup take, as soon as Beats 2–5 work (before the checker is done) | all | 3, 6, 7, 9 | — | Rough take recorded | todo |
+| 21 | 🍎 Final video (best of several takes) and submission | all | everything above | — | Video by 10:30am Sunday, submitted by 11:30am | todo |
+
+### Stats HUD spec (task 16)
+In a corner of the game, large and readable on video:
+- **Latest change:** transcript, what changed in plain words, model, latency (big, colored: green under 5 s, yellow under 15 s, red above), attempt number, ops count, code lines, checker and sandbox results.
+- **History:** the last few changes with their latencies.
+- **Persistent badge:** "Offline · Bonsai 2 4B · 1.9 GB".
+- **On refusal or rollback:** a clear red banner with the reason, matching what the copilot says.
+- **"Show code" toggle:** displays the code the model just wrote.
+
+### Demo check spec (task 17)
+`scripts/demo_check.py` runs Beats 3–6 in order against the live backend, with realistic player and cursor positions, and checks each beat's acceptance properties. Prints progress as it goes, so it can run in the background.
+- `--quick`: one pass. Run after every merge.
+- `--full`: 5 passes with a success rate per beat. Run before recording and after prompt or API changes.
+- `--beat N --runs K`: repeat one beat while working on it.
+
+Testing only: during the demo each command runs once, with a retry only if the first attempt fails. **If a beat fails more than 1 time in 5, fix the API, the prompt context or the examples, never by hardcoding. If it still fails Sunday morning, cut the beat rather than fake it.**
+
+### Checker interface (task 11 → pipeline)
+The checker lives in `backend/checker.py`; the pipeline calls it, so the two can be built in parallel.
+```python
+def check(level: dict, player: dict | None) -> dict:
+    """level = Level.model_dump(); player = {"x", "y", "has_double_jump"} in tiles, or None.
+    Returns {"ok": bool, "reason": str | None, "spoken": str | None}.
+    reason: specific, e.g. "gap2 is 8 tiles wide; the longest jump with current physics is 5 tiles."
+    spoken: one short sentence for the copilot, e.g. "Can't do that: you could only jump 5 tiles."
+    Physics numbers come from the shared config (A3), never hardcoded."""
+```
+
+**Parallel work:** tasks 5, 7, 9, 10, 11 and 16 run on any machine (stubs: `STUB_COMMANDS=1`, `STUB_SPEECH=1`). Coordination points: the shared physics config (10 → 11, 12, 13), the checker interface above, the mechanics-code op (5 ↔ 6 ↔ 7), and `cursor` (8 ↔ 9).
+
+
+## Later
+Not needed for any beat. Don't start these until every beat passes.
+- Second-voice features: SpeakerKit chaos mode, speaker permissions (old O5, A7)
+- Companion character
+- Canvas drawing and vision labeling of sketches
+- Deterministic difficulty ladder (old A10). Removed: it conflicts with the core principle
+- Sword, bow and other hand-written abilities. Abilities are model-written
+- Fast route on a separate 2B server (only if latency work isn't enough)
+
+## Recording plan
+**Length:** 2 minutes max. Record on the demo Mac at the venue; background noise shows the speech works in a real room.
+
+| Time | Shot |
+|---|---|
+| 0:00–0:10 | Wi-Fi off on screen. Title and one-line pitch |
+| 0:10–0:25 | Play the starting level: stomp an enemy, grab a coin |
+| 0:25–0:40 | "Make this harder." Changes appear ahead; copilot says what it added; HUD shows model and latency |
+| 0:40–0:55 | "Give me fireballs." Toggle "show code" briefly to show the lines Bonsai wrote; blast the new enemies |
+| 0:55–1:10 | Hover over a spot: "put a block here." Block appears on the highlighted tile |
+| 1:10–1:30 | "Make the next gap 10 tiles": refused out loud with the reason. "Let me jump higher." The wider gap now goes through within the new limit |
+| 1:30–1:45 | Reach the flag |
+| 1:45–2:00 | Stats: model size, latency history, attempts, code lines, demo-check success rates, "all on-device" |
+
+**Rules:**
+- Every result comes from a real model run. Record several full takes and use the best one.
+- Cut waiting time in editing, but keep latency badges visible so the cuts are honest. Optionally a small "sped up" or "trimmed" note during cuts.
+- Never use "Mario" or Nintendo names in narration, titles or captions.
+- Short narration or captions explaining each beat in one line.
+- **For PrismML:** show model size, latency, first-try success rate, and why we chose the 4B (matched the 9B's accuracy at about 1.6× the speed).
+- **For Argmax:** show the transcript appearing with its latency, and the copilot speaking back, with a different tone for refusals.
+- Record a rough backup take (task 20) as soon as Beats 2–5 work, before the checker is done.
+
+**Live finals (4–5 minutes):** same beats in the same order, plus one command from the judges if time allows. Talk over waits ("it's writing the fireball code now").
 
 ## Milestones
 | When | What |
 |---|---|
-| Midnight Saturday (Nov 14) | All P0 merged; backup demo video recorded (J2) |
-| 9:00am Sunday | Feature freeze; tag `demo-v1` |
-| 10:30am Sunday | Final 2-minute video (J3) |
-| 11:30am Sunday | Submitted (video, GitHub link, one-sentence description). Hard deadline is noon |
+| Midnight Saturday | Beats 1–5 pass the demo check; backup take recorded |
+| 9:00am Sunday | Feature freeze; tag `demo-v1`; `demo_check.py --full` |
+| 10:30am Sunday | Final video |
+| 11:30am Sunday | Submitted (hard deadline noon) |
+
+## Hardcoding audit (removal is task 4)
+Found on main, 11-14 16:40:
+- `backend/intents.py`: a pre-written fireball ability. `FIREBALL_DEFAULTS`, `FIREBALL_LIMITS`, `set_ability` restricted to `"fireball"`, and its compiler. Abilities must be model-written code.
+- `backend/prompts.py`: the worked example "make this harder and give me fireballs", which matches two demo beats, and the `set_ability` fireball line in the ops list.
+- `backend/prompts.py`: the rule "Harder: wider gaps (+1)… Easier: narrower gaps…", which maps one command to fixed levers. To be replaced by generic context (player limits, task 13).
+- plan.md: the deterministic ladder (old A10) and the `route: "ladder"` contract value. Removed in this PR.
+- Allowed and kept: `backend/stub_commands.py` keyword responses, which only run under `STUB_COMMANDS=1` (frontend development without a model). The intent ops (widen_gap, add_enemy, …) and the "ahead of the player" rule are building blocks used by many commands.
 
 ## Interface contracts (source of truth)
 Exact field names and types. A change needs a decisions-log entry and a heads-up to the other person.
@@ -37,7 +137,8 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 - `speaker` is `null` until SpeakerKit chaos mode (O5) exists; then `"player"`, `"friend"`, or an enrolled name.
 
 ### `POST /api/command`
-- Request: `{ "text": string, "source": "typed" | "voice", "speaker": string | null, "player": { "x": number, "y": number, "has_double_jump": boolean } | null }`
+- Request: `{ "text": string, "source": "typed" | "voice", "speaker": string | null, "player": { "x": number, "y": number, "has_double_jump": boolean } | null, "cursor": { "x": number, "y": number } | null }`
+- `cursor`: the tile under the mouse pointer (tiles, x right, y down), or `null`. Passed to the model as context ("put a block here"). Task 8.
 - `player`: the tile containing the player's center (x right, y down), or `null` when not playing. The backend uses it for "near_player", "ahead of me", "the next gap" and "make this harder": while playing, edits land ahead of the player and things fully behind the player are left alone.
 - Response:
 ```
@@ -45,14 +146,20 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
   "ok": boolean,                          // true only when status is "applied"
   "status": "applied" | "refused" | "error",
   "version": number,                      // level version after this command (unchanged if refused/error)
-  "route": "fast" | "level" | "ladder",   // "ladder" = precomputed difficulty step (A10), no model call
+  "route": "fast" | "level",
   "model": string,
   "latency_ms": number,                   // total backend time
   "patch": LowLevelOp[],                  // concrete ops for live apply; empty if refused or error
   "level": Level,                         // full level after the change (fallback reload + reconciliation)
   "spoken": string,                       // one short sentence for the copilot to say
   "reason": string | null,                // refusal or error details for the HUD; null when applied
-  "log": [ { "step": string, "model": string | null, "latency_ms": number, "errors": string[], "repairs": string[] } ]
+  "log": [ { "step": string, "model": string | null, "latency_ms": number, "errors": string[], "repairs": string[] } ],
+  "stats": {                              // task 15. Only measured numbers; null when not measured
+    "model": string, "model_size_gb": number | null, "latency_ms": number, "attempts": number,
+    "ops_count": number, "code_lines": number | null, "tokens_in": number | null, "tokens_out": number | null,
+    "tokens_per_sec": number | null, "checker": "passed" | "refused" | "not run",
+    "sandbox": "passed" | "rolled back" | "not run", "offline": true
+  }
 }
 ```
 - `log.step` is one of `"route"`, `"model"`, `"convert"`, `"check"`. `model` is `null` for steps with no model call. `convert.repairs` lists automatic fixes; `convert.errors` lists what couldn't be applied.
@@ -61,7 +168,8 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 
 ### `LowLevelOp` (the frontend must apply each of these live)
 - `{ "op": "set_physics", "key": "gravity" | "jump_velocity" | "run_speed", "value": number }`
-- `{ "op": "set_ability", "ability": string, "settings": object }`. Example: `"fireball"` with `{ "enabled": true, "key": "F", "speed": 420, "cooldown_ms": 400, "bounces": 2, "kills": true }`. A9 finalizes the fireball fields.
+- `{ "op": "set_ability", "ability": string, "settings": object }`. Settings for an ability whose code the model wrote in mechanics.js. There are no pre-written abilities.
+- **Proposed (task 6):** an op that delivers new model-written mechanics code to the running game, e.g. `{ "op": "set_mechanics", "version": number, "code": string }`. Task 6 finalizes it and logs the decision.
 - `{ "op": "add_entity", "entity": Entity }`. Full entity object with `id`, `type`, `x`, `y`, `w`, `h`, `behaviors`, `props`.
 - `{ "op": "remove_entity", "id": string }`
 - `{ "op": "update_entity", "id": string, "changes": object }`. `changes` is a partial Entity: any of `x`, `y`, `w`, `h`, `behaviors`, `props`. `props` is merged key by key; the other fields are replaced.
@@ -94,59 +202,6 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
   The stub really applies its ops to the in-memory level, so `level`, `version`, `GET /api/level` and undo stay consistent. It sleeps 0.6 s (fast) or 2 s (level) so "thinking" UI can be tested. The real command takes 9 to 25 s on the 4B.
 - `/api/transcribe` returns `"lower the gravity"`, `speaker: null`.
 - `/api/speak` returns a 0.25 s beep wav; pitch differs per style.
-
-## Task board
-Status: `todo`, `doing`, `in review`, `done`. Update when a PR opens or merges. Branch = lowercased task ID plus a short name (e.g. `a4-router`).
-
-**Why the split:** Owen doesn't have a Mac. Argmax (speech-to-text, TTS) and our Bonsai MLX models only run on Apple silicon, and Ashwin's Mac is the demo machine. So Mac-only work is Ashwin's and Owen takes work that runs on any machine. IDs are unchanged so old references still work; moved tasks say where they came from.
-
-Owen has no Mac and no loaner. He is working on an Acer laptop. All Mac-only work (MLX models, Argmax, demo recording) is Ashwin's.
-
-### Ashwin (Mac required)
-| ID | Title | Pri | Depends on | Files | Done when | Status |
-|---|---|---|---|---|---|---|
-| A1 | Finish PR #1 contract conversion: new `/api/command` shape, clear errors, deterministic fixes before model retry, max 1 model retry | P0 | — | backend/ | "add three enemies near the end" applies and returns the full contract | done (PR #1 merged) |
-| A2 | Intent-level ops: level summary for the model; widen_gap, shrink_platform, add_enemy(region / near_player), add_hazard_near, set_physics, set_ability. Backend converts to LowLevelOps and keeps everything in bounds | P0 | A1 | backend/ | "make the gaps bigger" succeeds on first try and stays in bounds | done (PR #1 merged) |
-| O1 (was Owen's) | Argmax speech-to-text offline: WhisperKit via the Argmax local server; `/api/transcribe` forwards to it (`ARGMAX_URL`). Time-box 2 hours; escalate blockers to the Argmax team in Discord | P0 | — | backend/main.py, CLAUDE.md setup | a recorded clip returns correct text with Wi-Fi off | in review (branch `o1-argmax`): server + `/api/transcribe` work offline-ready; mic and Wi-Fi-off checks pending |
-| O4 (was Owen's) | Copilot voice: `/api/speak` using TTSKit; `style` for refusals vs normal; pre-download the TTS model. Owen's frontend plays whatever `/api/speak` returns (the stub already returns wav) | P0 | — | backend/main.py, CLAUDE.md setup | the copilot speaks confirmations and refusals offline | todo |
-| A4 | Command router: "fast" (settings, abilities) gets a tiny prompt; "level" (geometry, entities) gets the level summary. Both use the 4B for now | P0 | A1 | backend/ | "lower the gravity" returns in a few seconds on the fast route | todo |
-| A6 | Player abilities in the prompt: current reach (max gap, max height, with and without double jump) computed from the shared config, in every level-route prompt, plus safe ways to make levels harder | P0 | A3, A5 | backend/ | prompt shows correct numbers after a physics change | todo |
-| A7 | Speaker permissions for chaos mode: if speaker is "friend", allow only harder-making ops; refuse helpful ones with a spoken reason | P1 | O5, A5 | backend/ | friend's "remove the enemies" is refused out loud | todo |
-| A8 | Eval script and table: 20 commands across both routes; valid rate, refusal correctness, latency per model; markdown table for the demo | P1 | A4, A5 | backend/ | table generated | started: 14-command version merged with PR #1 |
-| A9 | Fireball ability backend: schema for `abilities.fireball` and ops support | P2 | A2 | backend/ | "give me fireballs" returns a valid set_ability | mostly done in PR #1 (set_ability with fireball defaults) |
-| O5 | SpeakerKit chaos mode: enroll two voices (player, friend); return `speaker` in `/api/transcribe`; HUD shows who spoke. Needs a Mac, so Ashwin | P1 | O1 | backend/main.py (transcribe), frontend/ | two voices are told apart | todo |
-| A10 | Precomputed difficulty ladder. Keep a short ladder of relative difficulty steps ready at all times (e.g. harder 1–3, easier 1–2). Steps are relative ops resolved against the player's position at apply time ("next gap +1 tile", "one enemy 6 tiles ahead", "enemies 20% faster", "remove nearest enemy ahead"), not finished levels. Generated deterministically from difficulty knobs (gap width, enemy count and speed, hazards); no model calls by default (later, optionally, Bonsai picks or orders steps from the generated options). Each step is verified with the checker before it's stored; only beatable steps go on the ladder. Rebuilt in the background after every applied change and discarded whenever the level changes. The router sends "make this harder", "make it easier" and close variants to the ladder; everything else goes to Bonsai as before. Logs route `"ladder"` with latency; `spoken` says what changed, like any edit | P1 | A5 (checker) for verification; fits inside A4's routing | `backend/ladder.py` (new), hook in the command router; adds `"ladder"` to `route` in `backend/main.py` | "make this harder" and "make it easier" apply in under 200 ms, the result passes the checker, and changes land ahead of the player | todo |
-| J1 | Offline test: full flow with Wi-Fi off on the demo Mac (Ashwin's); fix anything that needs network | P0 | everything P0 | — | demo script runs offline | todo |
-
-### Owen (any machine)
-| ID | Title | Pri | Depends on | Files | Done when | Status |
-|---|---|---|---|---|---|---|
-| O2 | Hold-to-talk while playing: hold V to record, release to send. Build against the `/api/transcribe` stub. Game keeps running (also try brief slow motion or pause). HUD shows "listening", the transcript, "thinking" | P0 | stubs | frontend/ | voice command reaches `/api/command` mid-run | todo |
-| O3 | Live patch application: apply every LowLevelOp to the running scene without restart, keeping player position, velocity, score, power-ups. Never spawn anything overlapping the player; shift it. Fall back to full reload from `level` if live apply throws. Biggest frontend task | P0 | stubs (`STUB_COMMANDS=1`) | frontend/game.js | all stubbed commands apply live mid-run | todo |
-| O6 | Copilot HUD: change log (what changed, model, latency), refusal banner, version number, undo reachable while playing | P1 | O3 | frontend/ | visible during play | todo |
-| A3 (was Ashwin's) | Shared physics config: ONE file read by game.js and the checker (gravity, jump velocity, run speed, player size, double-jump strength, coyote time, jump buffer, jump cut, max fall speed). Owen picks the location (e.g. `shared/physics.json`); if the backend must serve it, describe the one-line `main.py` change in the PR | P0 | heads-up to Ashwin | new shared file, frontend/game.js | changing jump velocity in the config changes the game and the checker | todo |
-| A5 (was Ashwin's) | Playability checker and refusals (pure Python, no models): tile grid, jump arcs matching the real game physics (coyote time, variable jump), reachability from spawn and from the player's position with double-jump state, specific failure reasons. Verified against a test level with gaps 4/5/6/7 and heights 2/3/4 confirmed by hand in the game. Interface below; Ashwin wires it into the pipeline | P0 | A3 | `backend/checker.py` (new), `backend/levels/jump_test.json`, tests | sample level passes, the 10-tile gap fails with a clear reason, checker answers match the hand test | todo |
-| O7 | Fireball runtime: press the configured key to shoot in the facing direction; cooldown, bounce, kills enemies, removed on wall hit. Reads `abilities.fireball` | P2 | O3, A9 | frontend/ | fireball kills an enemy | todo |
-| O8 | Sprites and effects (done from Ashwin's session at Ashwin's request) | P1 | coordinate with O3 (both edit game.js) | frontend/, schema (optional fields) | sample level renders and plays with sprites, offline | done (PR #2 merged) |
-
-### Both
-| ID | Title | Pri | Done when | Status |
-|---|---|---|---|---|
-| J2 | Backup demo video, recorded on Ashwin's Mac | P1 | recorded by midnight Saturday | todo |
-| J3 | Final video (recorded on Ashwin's Mac) and submission | P0 | video by 10:30am Sunday, submitted by 11:30am | todo |
-
-### Checker interface (A5 → pipeline)
-Owen writes `backend/checker.py`; Ashwin calls it from `backend/pipeline.py`, so neither edits the other's file.
-```python
-def check(level: dict, player: dict | None) -> dict:
-    """level = Level.model_dump(); player = {"x", "y", "has_double_jump"} in tiles, or None.
-    Returns {"ok": bool, "reason": str | None, "spoken": str | None}.
-    reason: specific, e.g. "gap2 is 8 tiles wide; the longest jump with current physics is 5 tiles."
-    spoken: one short sentence for the copilot, e.g. "Can't do that: you could only jump 5 tiles."
-    Physics numbers come from the shared config (A3), never hardcoded."""
-```
-
-**Parallel work:** Ashwin's tasks and Owen's tasks touch different files. Coordination points: A3 (shared config: game.js and the checker read it), the checker interface above, A7/O5 (`speaker`), O8/O3 (both edit game.js).
 
 ## Decisions log
 | Time | Decision | Reason |
@@ -196,6 +251,13 @@ def check(level: dict, player: dict | None) -> dict:
 | 11-14 15:45 | TTS: `argmax-cli tts --model 0.6b` can write WAV (24 kHz) or play; warm load 0.5 s, first audio 0.14 s, about real time. For `/api/speak` (O4), keep a long-running TTS process instead of one CLI call per sentence (about 7 s each) | Measured |
 | 11-14 15:30 | No loaner Mac for Owen; O5 (SpeakerKit) goes to Ashwin | Owen works on an Acer laptop; SpeakerKit needs Apple silicon |
 | 11-14 15:20 | **Contract: `route` gains the value `"ladder"`** in the `/api/command` response | Ladder answers aren't fast-route or level-route model calls; the HUD and eval should show them separately. The frontend should treat unknown route values as display-only. The backend type changes when A10 lands |
+| 11-14 16:40 | **One goal: the demo video script, end to end, on the demo Mac with Wi-Fi off.** Board replaced by one numbered list in beat order, no owners; claim by number | Focus. Everything not serving a beat moves to "Later" |
+| 11-14 16:40 | **Core principle: nothing about what a command does is hardcoded.** Every command goes to Bonsai; our code provides building blocks, context, guardrails, measurement, and an immediate spoken acknowledgment | Judges may try their own commands at the finals; the system must stay general |
+| 11-14 16:40 | Deterministic ladder (old A10) removed; `"ladder"` removed from `route` | Prebuilt difficulty steps are hardcoded behavior |
+| 11-14 16:40 | Pre-written fireball ability to be removed (task 4); abilities are model-written in mechanics.js through the sandbox (tasks 5–6) | Same principle. `set_ability` stays as a generic settings op |
+| 11-14 16:40 | `/api/command` request gains `cursor: {x, y} \| null`; response gains `stats` (only measured numbers, null otherwise) | Beat 5 needs the cursor tile; Beat 8 and the HUD need honest stats |
+| 11-14 16:40 | Prompt examples must not match demo commands | Otherwise the demo shows memorized examples, not generality |
+
 
 ## Dropped
 Kept in the repo for now; remove in a cleanup PR.
@@ -206,7 +268,7 @@ Kept in the repo for now; remove in a cleanup PR.
 
 ## Known issues
 - **Commands take 9 to 25 s on the 4B** (most of it reading a 2,200-token prompt). The player moves a long way in that time. Biggest wins: the fast route with a tiny prompt (A4), a shorter level prompt, prompt prefix caching.
-- Until A5, a command can still make the level unbeatable (e.g. "make this harder" can widen the next gap to 6).
+- Until task 11, a command can still make the level unbeatable (e.g. "make this harder" can widen the next gap to 6).
 - `add_hazard_near` on a ground platform puts spikes one tile in from the landing edge; after a gap is widened, the spikes can end up on the first tile. Harsh but legal until the checker exists.
 - One mlx_vlm.server keeps only one model loaded; alternating fast and level routes swaps models (about 4 s each) unless `FAST_BASE_URL` points at a second server.
 - Nothing stops an unbeatable edit until A5 merges.
@@ -215,3 +277,4 @@ Kept in the repo for now; remove in a cleanup PR.
 - Argmax server quirks: `model` form field required but ignored; `temperature=0` returns 500 (`0.0` works). Handled in `backend/speech.py`; worth reporting to Argmax.
 - Ashwin's Mac is very low on disk (about 3 GB free after Argmax). The TTS 1.7b model (about 2.5 GB) doesn't fit; use 0.6b.
 - The code still uses the working name `Sketch2Game` (page title, `window.Sketch2Game`). Rename once the final name is picked.
+- Until task 7 (live patch application), an applied change reloads the level, which restarts the run.

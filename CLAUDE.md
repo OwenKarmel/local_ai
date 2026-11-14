@@ -1,9 +1,24 @@
 # CLAUDE.md — Voice game copilot (name TBD)
 
-Standing instructions for every Claude Code session on this repo. Ashwin and Owen each run their own session in parallel. Keep this file current and concise. `plan.md` holds the contracts, task board and decisions.
+Standing instructions for every Claude Code session on this repo. Ashwin and Owen each run their own session in parallel. Keep this file current and concise. `plan.md` holds the demo script (the one goal), the task board, the contracts and the decisions.
+
+## Core principle (read first)
+**Nothing about what a command does is hardcoded.** No keyword matching, no "if it hears X, do Y", no prebuilt difficulty steps, no pre-written abilities. Every command goes to Bonsai, which decides what to change and writes any new game code itself. Judges may try their own commands at the finals, so the system must stay general.
+
+Our code provides only:
+- **Building blocks:** the engine plus a documented mechanics API the model codes against (spawn entities and projectiles, physics bodies, velocity, collisions, input keys, timers, entity properties, tint and sprite). Rich enough that typical abilities take the model 10–30 lines.
+- **Context in the prompt:** compact level summary, current physics, the player's current abilities and limits, player position, cursor tile.
+- **Guardrails:** schema validation, the code sandbox (model code only in mechanics.js, syntax check, runtime error capture, automatic rollback), the playability checker, and at most one retry that feeds the error back to the model.
+- **Measurement:** stats on every change.
+- **An immediate spoken acknowledgment** ("On it") while the model works. This is feedback, not behavior.
+
+**Test for any code:** if it only exists to handle one specific command, it's hardcoding and doesn't belong. If many different commands could use it, it's a building block.
+- Prompt examples must not match the demo commands (e.g. show a bouncing-coin behavior, not fireballs).
+- When a demo beat fails more than 1 time in 5, fix the API, the prompt context or the examples, never by hardcoding the behavior. If it still fails Sunday morning, cut the beat rather than fake it.
+- Keyword stubs exist only behind `STUB_COMMANDS=1`, for frontend work without a model.
 
 ## Project
-An offline voice copilot that modifies a 2D platformer live while you play it. Hold V, say "lower the gravity", "make this harder" or "give me fireballs", and the running game changes without restarting. The copilot talks back through text-to-speech, and it refuses changes that would make the level impossible, explaining why out loud. It recreates Rosebud AI (edit games by chatting with a cloud AI) fully on-device. Built for the Cornell Local AI Hackathon; must use Bonsai (PrismML) and Argmax. Working beats polished.
+An offline voice copilot that edits your game while you play. A 2D platformer changes live while you play it. Hold V, say "lower the gravity", "make this harder" or "give me fireballs", and the running game changes without restarting. The copilot talks back through text-to-speech, and it refuses changes that would make the level impossible, explaining why out loud. It recreates Rosebud AI (edit games by chatting with a cloud AI) fully on-device. Built for the Cornell Local AI Hackathon; must use Bonsai (PrismML) and Argmax. Working beats polished.
 
 ## Hard constraints
 - **Runs with Wi-Fi off.** No CDN links, no cloud APIs, no fonts/images from the web. Phaser is bundled at `frontend/vendor/phaser.min.js`.
@@ -35,14 +50,13 @@ Key principles:
 Level state lives on the backend, in memory, as a stack of versions (loaded from `sample.json` at startup). Frontend and backend meet only through the HTTP contracts in plan.md.
 
 ## Ownership
-Owen doesn't have a Mac, and Argmax and the Bonsai MLX models only run on Apple silicon. So the split is by machine (see plan.md → "Task board"):
-- **Ashwin owns `backend/`** (except `backend/checker.py`) **and the Argmax setup** (WhisperKit, TTSKit, SpeakerKit). Ashwin's Mac is the demo machine.
-- **Owen owns `frontend/`, the shared physics config, and the playability checker module `backend/checker.py`** (with its test levels and tests). Ashwin calls the checker from the pipeline through the interface in plan.md.
+- **Tasks are claimed by number** on plan.md's board (status `doing (<name>)`) before starting. Whoever claims a task owns its files until it merges. Don't edit files another open task has claimed; describe the change in your PR instead.
+- **Mac-only work** (MLX models, Argmax, recording; marked 🍎 on the board) happens on Ashwin's Mac, the demo machine. Owen has no Mac (Acer laptop) and works against the stubs, or against Ashwin's model server over the local network.
 - **Shared** (heads-up to the other person before changing): `CLAUDE.md`, `plan.md`, the shared physics config, the level schema (`backend/schema.py` and the JSON below), the interface contracts, the checker interface.
-- Each session stays in its owner's files. If a task needs a change on the other side, describe it in the PR instead of making it.
 
 ## Rules
-- Model-written code may only go in `frontend/mechanics.js`.
+- Model-written code may only go in `frontend/mechanics.js`, and only through the sandbox (syntax check, runtime error capture, automatic rollback).
+- Everything serves the demo script in plan.md. Work not tied to a beat goes under "Later".
 - No network calls except the local backend (`/api/*`), the local model server and the local Argmax server.
 - Keep `backend/levels/sample.json` loading and playable at all times.
 - Physics numbers only in the shared config (once A3 lands).
@@ -109,7 +123,7 @@ The source of truth is **plan.md → "Interface contracts"**: `/api/transcribe`,
   "name": "Sample",
   "tile_size": 32, "width": 40, "height": 15,
   "physics": { "gravity": 1200, "jump_velocity": 560, "run_speed": 200 },
-  "abilities": { "fireball": { "enabled": true, "key": "F", "speed": 420, "cooldown_ms": 400, "bounces": 2, "kills": true } },
+  "abilities": { "bouncy_coins": { "enabled": true } },
   "spawn": { "x": 2, "y": 11 },
   "entities": [
     { "id": "ground1", "type": "platform", "x": 0, "y": 13, "w": 14, "h": 2 },
@@ -121,7 +135,7 @@ The source of truth is **plan.md → "Interface contracts"**: `/api/transcribe`,
 - `x, y` = top-left tile; `w, h` = size in tiles (default 1). Must lie inside `width × height`. `id`s unique.
 - `behaviors`: names of functions in `MECHANICS`. `props`: free-form scalars read by behaviors.
 - `sprite`, `tint`: optional, default `null`. See "Assets and sprites".
-- `abilities`: optional, default `{}`. Fireball fields are finalized by A9.
+- `abilities`: optional, default `{}`. Settings for abilities whose code the model wrote in mechanics.js (task 6). No ability is pre-written.
 - Spikes/lava kill on touch. Enemies die when stomped from above, kill otherwise. `double_jump` grants one air jump. `goal` = win.
 
 ## Assets and sprites
