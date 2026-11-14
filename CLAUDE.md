@@ -35,7 +35,7 @@ Starting a task:
 3. Claim it in plan.md "In progress" with owner and branch, commit that on the branch.
 
 While working:
-- Commit whenever something works, even partially. Small commits with clear messages ("add patch validation", "fix enemy stomp hitbox").
+- Commit whenever something works, even partially. Medium-sized commits with clear messages ("add patch validation", "fix enemy stomp hitbox").
 - Push the branch at least every hour so work is never only on one laptop: `git push -u origin feat/<short-name>`
 - If main has moved and you touch the same files, rebase early: `git fetch && git rebase origin/main`
 
@@ -57,6 +57,9 @@ Merging:
 
 Never commit:
 - Model weights, the mlx-venv, `__pycache__`, level version history files, `.env` files. Keep these in `.gitignore`.
+
+Attribution:
+- Never add Claude as a co-author or contributor: no `Co-Authored-By: Claude …` trailer in commits, no "Generated with Claude Code" line in PR descriptions. Commits are authored by the human whose machine they're on.
 
 Conflicts:
 - plan.md conflicts are expected; keep both sides' entries.
