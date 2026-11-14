@@ -35,9 +35,10 @@ Key principles:
 Level state lives on the backend, in memory, as a stack of versions (loaded from `sample.json` at startup). Frontend and backend meet only through the HTTP contracts in plan.md.
 
 ## Ownership
-- **Ashwin owns `backend/`** and the playability checker.
-- **Owen owns `frontend/`** and the Argmax setup. Owen also owns two small backend edits: the bodies of `/api/transcribe` (O1, O5) and `/api/speak` (O4).
-- **Shared** (heads-up to the other person before changing): `CLAUDE.md`, `plan.md`, the shared physics config, the level schema (`backend/schema.py` and the JSON below), the interface contracts.
+Owen doesn't have a Mac, and Argmax and the Bonsai MLX models only run on Apple silicon. So the split is by machine (see plan.md → "Task board"):
+- **Ashwin owns `backend/`** (except `backend/checker.py`) **and the Argmax setup** (WhisperKit, TTSKit, SpeakerKit). Ashwin's Mac is the demo machine.
+- **Owen owns `frontend/`, the shared physics config, and the playability checker module `backend/checker.py`** (with its test levels and tests). Ashwin calls the checker from the pipeline through the interface in plan.md.
+- **Shared** (heads-up to the other person before changing): `CLAUDE.md`, `plan.md`, the shared physics config, the level schema (`backend/schema.py` and the JSON below), the interface contracts, the checker interface.
 - Each session stays in its owner's files. If a task needs a change on the other side, describe it in the PR instead of making it.
 
 ## Rules
@@ -115,8 +116,43 @@ The source of truth is **plan.md → "Interface contracts"**: `/api/transcribe`,
 - `abilities`: optional, default `{}`. Fireball fields are finalized by A9.
 - Spikes/lava kill on touch. Enemies die when stomped from above, kill otherwise. `double_jump` grants one air jump. `goal` = win.
 
-## Setup for a new teammate (Apple Silicon Mac)
-Needs: Python 3.10+, git, `gh` logged in. Steps 1–3 and 6–7 are enough for the game and all stub endpoints; **the model server (4–5) is only needed for real model calls.**
+## Working without a Mac (Windows, Linux, or a Mac without the models)
+Everything except the models and Argmax runs anywhere: the game, the backend, the stub endpoints, and the playability checker. Needs Python 3.10+, git, and `gh` logged in (`gh auth login`).
+
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/OwenKarmel/local_ai.git; cd local_ai
+py -3 -m venv .venv                       # or: python -m venv .venv
+.venv\Scripts\Activate.ps1                # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+pip install -r backend/requirements.txt
+$env:STUB_COMMANDS = "1"                  # canned /api/command responses, no model server
+uvicorn backend.main:app --reload --port 8000
+# new PowerShell window:
+start http://localhost:8000
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/command -ContentType "application/json" `
+  -Body '{"text":"lower the gravity","source":"typed","speaker":null,"player":null}'
+```
+**macOS / Linux:**
+```bash
+git clone https://github.com/OwenKarmel/local_ai.git && cd local_ai
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
+STUB_COMMANDS=1 uvicorn backend.main:app --reload --port 8000     # then open http://localhost:8000
+```
+- `/api/transcribe` and `/api/speak` are stubs on every machine until O1 and O4 land: fixed text, and a short beep wav.
+- Without `STUB_COMMANDS=1`, `/api/command` tries the model server and returns `status: "error"` ("Model server not reachable").
+- No model server, Argmax, `~/models` folder or `.env` is needed.
+
+**Optional: real models from another machine (development only).** The demo runs entirely on Ashwin's Mac. For testing against the real 4B from Owen's machine:
+1. Ashwin starts the model server on the local network: `~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit --host 0.0.0.0 --port 1234`. Find the Mac's address with `ipconfig getifaddr en0`, and allow Python through the macOS firewall prompt.
+2. Owen gets the model id: `Invoke-RestMethod http://<mac-ip>:1234/v1/models` (it's an absolute path on Ashwin's Mac).
+3. Owen sets `$env:BONSAI_BASE_URL = "http://<mac-ip>:1234/v1"` and `$env:CODE_MODEL` / `$env:FAST_MODEL` to that id, clears `STUB_COMMANDS`, and runs the backend as usual.
+- Both machines must be on the same network. Venue Wi-Fi often blocks device-to-device traffic; a phone hotspot works.
+- The server has no authentication: only do this on a network you trust, and go back to `--host 127.0.0.1` afterwards.
+- Both people sharing one model server slows each other's requests.
+
+## Setup on the demo Mac (Apple silicon; models and Argmax)
+Needs: Python 3.10+, git, `gh` logged in. Steps 1–3 and 6–7 are enough for the game and all stub endpoints; **the model server (4–5) is only needed for real model calls.** Steps 4–5 are macOS-only.
 ```bash
 # 1. Clone
 git clone https://github.com/OwenKarmel/local_ai.git && cd local_ai
@@ -136,7 +172,7 @@ cd -
 # 5. Model server (separate terminal; works offline)
 ~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit --host 127.0.0.1 --port 1234
 
-# 6. Backend (separate terminal, from the repo root)
+# 6. Backend (separate terminal, from the repo root). Without the model server: STUB_COMMANDS=1 uvicorn ...
 source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000
 
 # 7. Open the game
@@ -146,7 +182,7 @@ No `.env` needed. Check with `curl localhost:8000/api/health`. Try a command: `c
 
 **No model server?** Start the backend with `STUB_COMMANDS=1 uvicorn backend.main:app --reload --port 8000`. `/api/command` then returns canned keyword responses (plan.md → "Stubs").
 
-Argmax setup (WhisperKit server, TTSKit, SpeakerKit): Owen documents the commands here as O1, O4 and O5 land.
+Argmax setup (WhisperKit server, TTSKit, SpeakerKit): Ashwin documents the commands here as O1, O4 and O5 land.
 
 Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py` only; after editing `sample.json`, restart the backend or use the Reset button.
 
@@ -159,7 +195,7 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py`
 | `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit` (fast route, A4). Same model on purpose: one server, no swapping |
 | `STUB_COMMANDS` | unset. `1` = `/api/command` returns canned keyword responses, no model server needed |
 | `BONSAI_MODELS_DIR` | `~/models/prism-ml` (base for the two defaults above) |
-| `ARGMAX_URL` | `http://localhost:50060/v1` (placeholder; Owen confirms in O1) |
+| `ARGMAX_URL` | `http://localhost:50060/v1` (placeholder; Ashwin confirms in O1) |
 
 Model notes:
 - Bonsai 2 MLX packs need **mlx-vlm ≥ 0.7.8**; released mlx-lm (and LM Studio's MLX engine) can't load them yet.
