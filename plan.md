@@ -9,14 +9,14 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 
 ## Milestones
 - [x] 1. Game runtime: sample level, platforms/hazards/enemies/coins/double jump/goal, coyote time, camera, restart, win
-- [ ] 2. Level editing with model: command box, patch ops, structured output, Pydantic validation + 2 retries, side-panel log, version history + undo, latency display
+- [ ] 2. Level editing with model: command box, patch ops (CODE_MODEL), structured output, Pydantic validation + 2 retries, side-panel log, version history + undo, model name + latency per request
 - [ ] 3. Engine edits: model writes behaviors in mechanics.js, versioned, `node --check`, runtime error → report → auto-rollback (+ optional 1 repair)
-- [ ] 4. Canvas drawing: pen, stroke grouping, bbox → tile snap, vision labeling + pen-color fallback, apply as patch
+- [ ] 4. Canvas drawing: pen, stroke grouping, bbox → tile snap, vision labeling (try FAST_MODEL first, CODE_MODEL only if accuracy is poor; log choice in decisions) + pen-color fallback, apply as patch
 
 ## In progress
-| Task | Owner | Files touched |
-|---|---|---|
-| — | — | — |
+| Task | Owner | Branch | Files touched |
+|---|---|---|---|
+| — | — | — | — |
 
 ## Decisions log
 | Time | Decision | Reason |
@@ -30,15 +30,18 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 | 11-14 | Hazard hitboxes are inset zones, not full tiles | Forgiving feel; spikes only hurt near the bottom |
 | 11-14 | Patch Pydantic models already in schema.py | Shared contract for feature 2 |
 | 11-14 | Sample level shortened to 40 wide, 4 coins (schema still allows up to 400) | Faster manual testing; still has every entity type |
+| 11-14 | Two models: CODE_MODEL (Bonsai 2 9B) for patches/code, FAST_MODEL (Bonsai 2 2B) for chat/classification | Keep the slow model off simple jobs; latency matters in the demo |
+| 11-14 | Branch per task + PR reviewed by the other person's session; plan.md updates go on main | Avoid stepping on each other; this rule change itself was committed straight to main |
+| — | Vision labeling model: TBD (try FAST first) | Fill in during feature 4 with accuracy notes |
 
 ## Known issues
 - Game canvas is fixed 960x480; levels taller than 15 tiles scroll vertically via camera (fine), shorter ones show sky.
 - Behavior errors currently only disable that behavior + log; report/rollback is feature 3.
 
 ## Next up
-1. Feature 2: `backend/llm.py` (OpenAI-compatible client, JSON-schema response format, fallback parse) + `POST /api/command {text, source}` with validate/retry ×2
-2. Feature 2: patch apply + version history + undo endpoint; command box, log, latency in side panel
-3. Feature 4 can start in parallel (frontend/draw.js only) since it reuses the patch pipeline
+1. Feature 2 (`feat/patches`): `backend/llm.py` (OpenAI-compatible client, `chat(model, ...)` returns text + model + latency; JSON-schema response format with fallback parse) + `POST /api/command {text, source}` using CODE_MODEL with validate/retry ×2
+2. Feature 2: patch apply + version history + undo endpoint; command box, log, model + latency in side panel
+3. Feature 4 (`feat/draw`) can start in parallel (frontend/draw.js only) since it reuses the patch pipeline
 
 ## Later
 - Voice input via Argmax local transcription → same command pipeline (`source: "voice"`)

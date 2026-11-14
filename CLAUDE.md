@@ -3,11 +3,14 @@
 Standing instructions for every Claude Code session on this repo. Two people (each with their own Claude session) work here in parallel. Keep this file current and concise.
 
 ## Project
-Sketch2Game is an offline, AI-powered 2D platformer maker. The user draws a level on a canvas (or starts from the sample), plays it in a Phaser 3 runtime, and edits it with natural-language commands ("make the gaps bigger", "add three enemies near the end"). A local LLM (Bonsai 2, 9B) returns a validated *patch* to the level JSON, and when a command needs new behavior ("make enemies jump toward the player") it also writes a new behavior function into `mechanics.js`. Hackathon MVP: working beats polished.
+Sketch2Game is an offline, AI-powered 2D platformer maker. The user draws a level on a canvas (or starts from the sample), plays it in a Phaser 3 runtime, and edits it with natural-language commands ("make the gaps bigger", "add three enemies near the end"). A local LLM (Bonsai 2) returns a validated *patch* to the level JSON, and when a command needs new behavior ("make enemies jump toward the player") it also writes a new behavior function into `mechanics.js`. Hackathon MVP: working beats polished.
 
 ## Hard constraints
 - **Runs with Wi-Fi off.** No CDN links, no cloud APIs, no fonts/images from the web. Phaser is bundled at `frontend/vendor/phaser.min.js`.
-- **Model: Bonsai 2 (9B) only**, via a local OpenAI-compatible server (LM Studio or llama.cpp `server`).
+- **Models: Bonsai 2 only**, via a local OpenAI-compatible server (LM Studio or llama.cpp `server`). Two models, set by env vars:
+  - `CODE_MODEL` (default Bonsai 2 9B): level patches and mechanics code.
+  - `FAST_MODEL` (default Bonsai 2 2B): conversational replies and simple classification (incl. drawing labels, see plan.md).
+  - Log which model handled each request and its latency (backend log + side panel).
 - Speech (Argmax local transcription) comes later: a transcript must enter the **same command pipeline** as typed text (`source: "text" | "voice"`).
 
 ## Rules
@@ -17,11 +20,11 @@ Sketch2Game is an offline, AI-powered 2D platformer maker. The user draws a leve
 - Don't build items listed under "Later" in plan.md unless asked.
 
 ## Workflow (both sessions)
-1. Start of every session: `git pull`, then read `plan.md`.
-2. Before starting a task: claim it under "In progress" in plan.md (task, owner, files touched), commit, push — so the other session doesn't start it too.
+1. Start of every session: `git checkout main && git pull`, then read `plan.md`.
+2. Work on a short-lived branch per task (e.g. `feat/runtime`, `feat/patches`). Claim the task in plan.md's "In progress" section with owner and branch name (commit that claim to main and push, so the other session sees it).
 3. Stay inside the files your task needs; don't edit files the other person has claimed.
-4. Commit small and often with clear messages; `git pull --rebase` before pushing.
-5. After finishing: update plan.md (check off, clear "In progress", log decisions, known issues, refresh "Next up"), commit, push.
+4. Keep PRs small. Open a PR (`gh pr create`) when the task works end to end; the other person's Claude session reviews it before merge. Prioritize reviewing open PRs quickly so nobody is blocked; check `gh pr list` at session start.
+5. After merging, update plan.md on main (check off, clear "In progress", log decisions, known issues, refresh "Next up").
 6. Update this file whenever architecture, file map, schema, or run instructions change.
 
 ## Architecture
@@ -29,7 +32,7 @@ Sketch2Game is an offline, AI-powered 2D platformer maker. The user draws a leve
 Browser (one page, plain JS)                 FastAPI (Python)                 Local model
  ┌ Phaser game (game.js) ┐  GET /api/level   ┌ main.py ─ in-memory current ┐  OpenAI-compatible
  │  calls MECHANICS[name] │ ◄──────────────── │   level + version history   │  /v1/chat/completions
- │  (mechanics.js)        │  POST /api/command│ llm.py (planned) ──────────►│  Bonsai 2 9B
+ │  (mechanics.js)        │  POST /api/command│ llm.py (planned) ──────────►│  Bonsai 2 (CODE/FAST)
  └ side panel (log/undo) ┘ ────────────────► │ schema.py (Pydantic)        │
 ```
 - Level state lives on the backend (in memory, loaded from `sample.json` at startup). Frontend fetches it and renders.
@@ -41,7 +44,7 @@ Browser (one page, plain JS)                 FastAPI (Python)                 Lo
 |---|---|
 | `backend/main.py` | FastAPI app: serves `frontend/`; `GET /api/level`, `POST /api/level/reset`, `GET /api/health` |
 | `backend/schema.py` | Pydantic models: `Level`, `Entity`, `Physics`, patch ops |
-| `backend/config.py` | Env-var config (model URL/name) |
+| `backend/config.py` | Env-var config: `BONSAI_BASE_URL`, `CODE_MODEL`, `FAST_MODEL` |
 | `backend/levels/sample.json` | Handwritten sample level, 40×15, 4 coins (must always work) |
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game left, side panel right |
@@ -94,8 +97,9 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart.
 | Env var | Default |
 |---|---|
 | `BONSAI_BASE_URL` | `http://localhost:1234/v1` |
-| `BONSAI_MODEL` | `bonsai-2-9b` |
-Start LM Studio's local server (or `llama-server --port 1234`) with Bonsai loaded.
+| `CODE_MODEL` | `bonsai-2-9b` (patches, mechanics code) |
+| `FAST_MODEL` | `bonsai-2-2b` (chat replies, classification) |
+Start LM Studio's local server (or `llama-server --port 1234`) with both models loaded. Set the env vars to the exact model IDs your server reports at `GET $BONSAI_BASE_URL/models`.
 
 ## Conventions
 - Python: type hints, Pydantic v2, keep endpoints in `main.py` until it hurts.
