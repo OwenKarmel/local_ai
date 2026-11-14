@@ -91,23 +91,27 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/main.py` | FastAPI app: serves `frontend/`, version stack, all `/api/*` endpoints. `/api/transcribe` and `/api/speak` are still `STUB`s |
 | `backend/schema.py` | Pydantic models: `Level` (with `abilities`), `Entity`, `Physics`, `LowLevelOp` |
 | `backend/config.py` | Env-var config: `BONSAI_BASE_URL`, `FAST_BASE_URL`, `CODE_MODEL`, `FAST_MODEL`, `ARGMAX_URL` |
-| `backend/levels/sample.json` | Handwritten sample level, 40×15, 4 coins (must always work) |
+| `backend/levels/sample.json` | Handwritten sample level, 40×15, 4 coins (must always work). Stage 1 |
+| `backend/levels/boss.json` | Stage 2, "Boss Arena": two-phase boss `boss1` (behavior `boss`, 6 hp), goal locked until it's defeated |
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game plus side panel |
 | `frontend/game.js` | Phaser scene: builds the level from JSON, player controls, collisions, win/death |
 | `frontend/voice.js` | Hold-to-talk (button or V), listening badge + mic meter, typed fallback; calls `/api/transcribe`, `/api/command`, `/api/speak` |
+| `frontend/looks.js` | `window.LOOKS`: visual-only object looks, the scene look (sky, overlay, weather, filters) and event reactions, applied live |
 | `frontend/sprites.js` | `window.SPRITES`: loads the sprite catalog, skins entities (with fallbacks), particle effects, projectile visuals |
 | `frontend/assets/catalog.json` | Sprite catalog: name, file, type, description, size, animations, tilesets, per-type defaults |
 | `frontend/assets/catalog.txt` | Compact `name: description` list for model prompts |
 | `frontend/assets/sprites/` | The PNGs we use (about 200 KB) plus `License.txt` |
 | `tools/build_catalog.py` | Rebuilds `frontend/assets/` from a downloaded Kenney pack |
-| `frontend/mechanics.js` | Behavior registry (`patrol`). The only file model-written code may go in |
+| `tools/big_player.py` | Derives the tall grown-player frames (`character_big_green_*.png`) from the green alien; run by `build_catalog.py`, or alone |
+| `frontend/mechanics.js` | Behavior registry (`patrol`, `boss`). The only file model-written code may go in |
 | `frontend/vendor/phaser.min.js` | Phaser 3.80.1, bundled locally |
 | `testbonsai/` | Dev-only: run Bonsai 2 GGUF (2B/9B) with llama.cpp (CUDA) on a non-Mac machine (WSL2); `run-game.sh` wires the backend to it. Not part of the demo |
 
 | `backend/llm.py` | Client for the local model server; logs model + latency |
 | `backend/summary.py` | Level analysis + the text summary the model sees (ground, gaps, platforms, objects, regions, player) |
 | `backend/intents.py` | High-level ops the model emits (widen_gap, add_enemy, set_ability, …), id-restricted JSON schema, compiler to coordinates |
+| `backend/looks.py` | Visual-only intent ops (`set_look`, `set_scene`, `add_reaction`, `remove_reaction`), look target groups, color names |
 | `backend/patcher.py` | `Editor` (working copy + automatic fixes), `diff_levels` (old vs new → LowLevelOps), `apply_low_level` |
 | `backend/pipeline.py` | `run_command(level, text, model, player)`: prompt → model → intents → fixes → validate → contract response. Max 1 model retry |
 | `backend/prompts.py` | System prompt + 2 worked examples |
@@ -132,18 +136,21 @@ The source of truth is **plan.md → "Interface contracts"**: `/api/transcribe`,
   ]
 }
 ```
-- `type` ∈ `platform | spikes | lava | enemy | coin | double_jump | goal`.
+- `type` ∈ `platform | spikes | lava | enemy | coin | double_jump | grow | goal`.
 - `x, y` = top-left tile; `w, h` = size in tiles (default 1). Must lie inside `width × height`. `id`s unique.
 - `behaviors`: names of functions in `MECHANICS`. `props`: free-form scalars read by behaviors.
 - `sprite`, `tint`: optional, default `null`. See "Assets and sprites".
 - `abilities`: optional, default `{}`. Settings for abilities whose code the model wrote in mechanics.js (task 6). No ability is pre-written.
-- Spikes/lava kill on touch. Enemies die when stomped from above, kill otherwise. `double_jump` grants one air jump. `goal` = win.
+- `look` (entity), `player_look`, `scene`, `reactions` (level): optional, visual only (`Look`, `PlayerLook`, `SceneLook`, `Reaction` in `backend/schema.py`). Never change gameplay, so they skip the checker.
+- Levels are played as **stages** in order (`STAGES` in `backend/main.py`: sample, then boss). Each stage has its own version stack; commands edit the active stage.
+- Enemy `props.hp` (default 1) = stomps to defeat; the game shows an HP bar when it's above 1. A goal with `props.locked_by: "<id>"` can't be reached while that object is alive. Behavior props and their allowed ranges live in `BEHAVIOR_PROPS` in `backend/summary.py` (shown to the model, enforced by `set_property`).
+- Spikes/lava kill on touch. Enemies die when stomped from above, kill otherwise. `double_jump` grants one air jump. `grow` turns the player into a taller character (catalog default `player_big`, body 28×48); a big player survives one hazard or enemy hit by shrinking back (pits still kill). `goal` = win.
 
 ## Assets and sprites
-- **Art:** Kenney "New Platformer Pack 1.1" (kenney.nl), **CC0** (public domain; credit optional). The license file is at `frontend/assets/sprites/License.txt`. `ball_white.png` and `effect_*.png` are derived or generated from it. No other art sources without checking the license; never Nintendo or other copyrighted game art.
+- **Art:** Kenney "New Platformer Pack 1.1" (kenney.nl), **CC0** (public domain; credit optional). The license file is at `frontend/assets/sprites/License.txt`. `ball_white.png`, `effect_*.png` and `character_big_*.png` (the grown player, made by `tools/big_player.py`) are derived or generated from it. No other art sources without checking the license; never Nintendo or other copyrighted game art.
 - Only the sprites we use are in the repo. Never commit the full downloaded pack. To add sprites: edit `tools/build_catalog.py`, then run `python tools/build_catalog.py <extracted pack folder>` (needs Pillow).
 - Entities take optional `sprite` (a catalog name) and `tint` (hex like `#3399ff`). Unknown sprite name → the type's default sprite → a plain colored rectangle. The game never crashes on a bad name or tint.
-- Physics bodies do not depend on the art: player 24×30, enemy 28×24, whatever sprite is used.
+- Physics bodies do not depend on the art: player 24×30 (28×48 while grown), enemy 28×24 per tile of `w`/`h` (a 2×2 boss is 56×48), whatever sprite is used.
 - Live look changes: `Sketch2Game.setAppearance(id, {sprite, tint})`, `Sketch2Game.setPlayerLook({sprite, tint})`. Projectile visuals: `SPRITES.spawnProjectile(scene, x, y, dir, {sprite, tint, speed})` and `SPRITES.setProjectileLook(scene, projectile, {sprite, tint})`.
 
 ## Working without a Mac (Windows, Linux, or a Mac without the models)
@@ -251,11 +258,11 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py`
 | `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit` (fast route, A4). Same model on purpose: one server, no swapping |
 | `BONSAI_MODELS_DIR` | `~/models/prism-ml` (base for the two defaults above) |
 | `ARGMAX_URL` | `http://localhost:50060/v1` (`argmax-cli serve` default port) |
+| `NO_THINKING` | unset. `1` = send `chat_template_kwargs.enable_thinking=false` so the model skips its reasoning phase (about 2.7x faster on llama-server with the 2B) |
 | `STUB_SPEECH` | unset. `1` = `/api/transcribe` returns fixed text, no Argmax needed |
 
 Model notes:
 - Bonsai 2 MLX packs need **mlx-vlm ≥ 0.7.8**; released mlx-lm (and LM Studio's MLX engine) can't load them yet.
-| `NO_THINKING` | unset. `1` = send `chat_template_kwargs.enable_thinking=false` so the model skips its reasoning phase (about 2.7x faster on llama-server with the 2B) |
 - Model ids are the absolute folder paths, as listed at `GET $BONSAI_BASE_URL/models`.
 - One server process keeps one model loaded; requesting another swaps it (about 4 s). It honors `response_format: json_schema`.
 - Thinking: off by default on mlx_vlm.server; on by default on llama-server (Bonsai GGUF template). `NO_THINKING=1` turns it off on any server. Send sampler params per request: `temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.5`.

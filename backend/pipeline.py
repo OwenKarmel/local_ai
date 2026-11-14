@@ -6,7 +6,7 @@ No global state (the eval script calls it too). Returns the /api/command contrac
 import logging
 import time
 
-from .intents import compile_intent, intent_schema, parse_intent
+from .intents import compile_intent, drop_unasked, intent_schema, parse_intent
 from .llm import STRUCTURED_SAMPLER, LLMError, chat, short_name
 from .patcher import PatchError, extract_json
 from .prompts import intent_messages, retry_message
@@ -71,10 +71,15 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None,
         try:
             intent = parse_intent(extract_json(res["text"]))
             att["intent"] = intent.model_dump()
+            dropped = drop_unasked(intent, text)
+            if dropped and not intent.ops:
+                raise PatchError("Every op was something the command did not ask for:\n"
+                                 + "\n".join(f"- {d}" for d in dropped)
+                                 + "\nDo only what the command asks; \"asked\" must quote the command's words.")
             if not intent.ops:
                 raise PatchError("The reply has no ops. Return at least one operation, or one 'unsupported' op explaining what can't be done.")
             ed = compile_intent(level, intent, player)
-            cstep["repairs"] = list(ed.repairs)
+            cstep["repairs"] = dropped + list(ed.repairs)
             new_level = ed.result()
             errors = list(ed.errors)
         except PatchError as e:

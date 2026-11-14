@@ -125,7 +125,7 @@
   function playerState() {
     const sc = S() && S().scene;
     if (!sc || !sc.player || !sc.sys.isActive()) return null;
-    return { x: Math.floor(sc.player.x / 32), y: Math.floor(sc.player.y / 32), has_double_jump: !!sc.hasDoubleJump };
+    return { x: Math.floor(sc.player.x / 32), y: Math.floor(sc.player.y / 32), has_double_jump: !!sc.hasDoubleJump, is_big: !!sc.isBig };
   }
 
   async function sendCommand(text, source) {
@@ -146,7 +146,7 @@
       if (d.reason) log(`${d.status}: ${d.reason}`, "error");
       log(`[${source}] "${text}" → ${d.status} (${secs} s): ${d.spoken}`, d.status === "applied" ? "ok" : "error");
       // Live apply (task 7): no restart; falls back to a reload inside applyPatch if it fails.
-      if (d.status === "applied" && d.level) S().applyPatch(d.patch, d.level, d.spoken);
+      if (d.status === "applied" && d.level) S().applyPatch(d.patch, d.level, d.spoken, d.stage);
       setStatus(d.status === "applied" ? "Done. Hold to talk again." : d.status === "refused" ? "Refused." : "Error.",
                 d.status === "applied" ? "" : "error");
       speak(d.spoken, d.status === "refused" ? "refusal" : "normal");

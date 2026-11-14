@@ -71,10 +71,31 @@
     return null;
   };
 
-  S.applyTint = function (obj, entry, tint) {
+  // Recolor one game object to `color` (number or null = original colors). WebGL: a color-matrix pre-FX that maps
+  // brightness onto the color, so shading survives ("blue grass" stays grass-shaped). Canvas: plain multiply tint.
+  S.recolor = function (o, color) {
+    if (!o || !o.scene) return;
+    o.recolorColor = color;
+    if (o.preFX) {
+      if (color == null) { if (o._cm) o._cm.reset(); return; }
+      if (!o._cm) o._cm = o.preFX.addColorMatrix();
+      const r = ((color >> 16) & 255) / 255, g = ((color >> 8) & 255) / 255, b = (color & 255) / 255, k = 1.45;
+      const L = [0.3 * k, 0.59 * k, 0.11 * k];
+      o._cm.set([L[0] * r, L[1] * r, L[2] * r, 0, 0, L[0] * g, L[1] * g, L[2] * g, 0, 0, L[0] * b, L[1] * b, L[2] * b, 0, 0, 0, 0, 0, 1, 0]);
+    } else if (color == null) o.clearTint();
+    else o.setTint(color);
+  };
+
+  // Entity colors: `tint` for the whole thing; for tiled areas, look.top_tint / look.body_tint override it per row.
+  S.applyTint = function (obj, entry, tint, look) {
     const t = S.tint(tint) ?? S.tint(entry && entry.tint);
-    for (const o of obj.visuals || [obj]) { if (t == null) o.clearTint(); else o.setTint(t); }
-    obj.tintColor = t;
+    const top = look && look.top_tint ? S.tint(look.top_tint) : null;
+    const body = look && look.body_tint ? S.tint(look.body_tint) : null;
+    for (const o of obj.visuals || [obj]) {
+      if (o.clearTint) o.clearTint();
+      S.recolor(o, (o.isTop ? top : body) ?? t);
+    }
+    obj.tintColor = t ?? top ?? body;
   };
 
   S.play = function (obj, anim) {
@@ -86,20 +107,25 @@
 
   // ---------- skins ----------
   // Dynamic sprite (player, enemy, projectile). Keeps the physics body at exactly bw x bh world px,
-  // feet at the bottom of the art, and makes sprite.x/y the body center.
-  S.skinDynamic = function (scene, obj, entry, fallbackKey, bw, bh) {
+  // feet at the bottom of the art, and makes sprite.x/y the body center. `mul` scales the art (large enemies);
+  // `mulY` (default mul) stretches it vertically.
+  S.skinDynamic = function (scene, obj, entry, fallbackKey, bw, bh, mul = 1, mulY = mul) {
     obj.look = entry;
     if (obj.anims) obj.anims.stop();
-    if (!entry) {
-      obj.setTexture(fallbackKey).setScale(1).setOrigin(0.5, 0.5);
-      if (obj.body) { obj.body.setSize(bw, bh); obj.body.setOffset((obj.width - bw) / 2, (obj.height - bh) / 2); }
-      return;
-    }
-    const s = entry.scale || 0.5, [fw, fh] = entry.size;
-    obj.setTexture(key(entry.file)).setScale(s);
-    const w = bw / s, h = bh / s, ox = (fw - w) / 2, oy = fh - h;
+    obj.bodyW = bw; obj.bodyH = bh;
+    if (!entry) obj.setTexture(fallbackKey).setScale(mul, mulY);
+    else obj.setTexture(key(entry.file)).setScale((entry.scale || 0.5) * mul, (entry.scale || 0.5) * mulY);
+    S.fitBody(obj);
+  };
+
+  // Re-fit a dynamic sprite's body to obj.bodyW x obj.bodyH world px at its current scale, feet at the art's bottom.
+  // Call after changing the sprite's scale (arcade bodies otherwise grow and shrink with it).
+  S.fitBody = function (obj) {
+    if (!obj.bodyW) return;
+    const sx = Math.abs(obj.scaleX) || 1, sy = Math.abs(obj.scaleY) || 1, fw = obj.width, fh = obj.height;
+    const w = obj.bodyW / sx, h = obj.bodyH / sy, ox = (fw - w) / 2, oy = fh - h;
     obj.setOrigin(0.5, (oy + h / 2) / fh);
-    if (obj.body) { obj.body.setSize(w, h); obj.body.setOffset(ox, oy); }
+    if (obj.body) { obj.body.setSize(w, h, false); obj.body.setOffset(ox, oy); }
   };
 
   // Static item (coin, power-up, goal): art at (x, y), hitbox bw x bh centered at (bx, by).
@@ -126,10 +152,12 @@
       const src = scene.textures.get(key(file)).getSourceImage();
       const ts = scene.add.tileSprite(left + tx * TILE, top + ty * TILE, tw * TILE, th * TILE, key(file)).setOrigin(0, 0);
       ts.setTileScale(TILE / src.width, TILE / src.height);
+      ts.isTop = ty === 0; // top row (grass, liquid surface): recolored by look.top_tint
       out.push(ts);
     };
     if (!entry) {
       out.push(scene.add.tileSprite(left, top, wt * TILE, ht * TILE, fallbackKey).setOrigin(0, 0));
+      out[0].isTop = true;
       return out;
     }
     const t = entry.tiles || {};
