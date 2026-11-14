@@ -49,47 +49,48 @@ class Level(BaseModel):
             if e.id in seen:
                 errors.append(f"duplicate entity id '{e.id}'")
             seen.add(e.id)
-            if e.x + e.w > self.width or e.y + e.h > self.height:
-                errors.append(f"entity '{e.id}' at ({e.x},{e.y}) size {e.w}x{e.h} is outside the level")
+            if e.x + e.w > self.width:
+                errors.append(f"{e.id} ends at x {e.x + e.w} but the level is {self.width} wide; "
+                              f"set w <= {max(1, self.width - e.x)} or x <= {max(0, self.width - e.w)}")
+            if e.y + e.h > self.height:
+                errors.append(f"{e.id} ends at y {e.y + e.h} but the level is {self.height} tall; "
+                              f"set h <= {max(1, self.height - e.y)} or y <= {max(0, self.height - e.h)}")
         if errors:
             raise ValueError("; ".join(errors))
         return self
 
 
-# ---- Patch ops (used from feature 2) ----
-class AddOp(BaseModel):
-    op: Literal["add"]
+# ---- LowLevelOp: the concrete ops the backend returns and the frontend applies live (plan.md contract) ----
+class AddEntity(BaseModel):
+    op: Literal["add_entity"]
     entity: Entity
 
 
-class RemoveOp(BaseModel):
-    op: Literal["remove"]
+class RemoveEntity(BaseModel):
+    op: Literal["remove_entity"]
     id: str
 
 
-class MoveOp(BaseModel):
-    op: Literal["move"]
+class UpdateEntity(BaseModel):
+    op: Literal["update_entity"]
     id: str
-    x: int = Field(ge=0)
-    y: int = Field(ge=0)
+    changes: dict  # partial Entity: any of x, y, w, h, behaviors, props (props merge key by key)
 
 
-class SetOp(BaseModel):
-    op: Literal["set"]
-    id: str
-    key: str  # x, y, w, h, type, behaviors, or props.<name>
-    value: Union[Scalar, list[str]]
-
-
-class SetPhysicsOp(BaseModel):
+class SetPhysics(BaseModel):
     op: Literal["set_physics"]
     key: Literal["gravity", "jump_velocity", "run_speed"]
     value: float
 
 
-PatchOp = Annotated[Union[AddOp, RemoveOp, MoveOp, SetOp, SetPhysicsOp], Field(discriminator="op")]
+class SetAbility(BaseModel):
+    op: Literal["set_ability"]
+    ability: str
+    settings: dict
 
 
-class Patch(BaseModel):
-    explanation: str = ""
-    ops: list[PatchOp]
+LowLevelOp = Annotated[Union[AddEntity, RemoveEntity, UpdateEntity, SetPhysics, SetAbility], Field(discriminator="op")]
+
+
+class LowLevelPatch(BaseModel):
+    ops: list[LowLevelOp]
