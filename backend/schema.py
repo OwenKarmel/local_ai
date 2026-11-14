@@ -37,7 +37,7 @@ class Level(BaseModel):
     width: int = Field(80, ge=10, le=400)
     height: int = Field(15, ge=5, le=50)
     physics: Physics = Physics()
-    abilities: dict[str, dict] = {}  # e.g. {"fireball": {"enabled": true, ...}}; exact fields defined by task A9
+    abilities: dict[str, dict] = {}  # settings for model-written abilities in mechanics.js (task 6); none are pre-written
     spawn: Spawn
     entities: list[Entity]
 

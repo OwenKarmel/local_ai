@@ -14,8 +14,6 @@ from .summary import FIXED_REGIONS, PLAYER_REGIONS, analyze, overlaps_x, regions
 
 MIN_GROUND = 3  # a ground platform never shrinks below this many tiles
 PHYSICS_LIMITS = {"gravity": (300, 3000), "jump_velocity": (200, 1200), "run_speed": (80, 500)}
-FIREBALL_DEFAULTS = {"enabled": True, "key": "F", "speed": 420, "cooldown_ms": 400, "bounces": 2, "kills": True}
-FIREBALL_LIMITS = {"speed": (150, 900), "cooldown_ms": (100, 3000), "bounces": (0, 5)}
 
 
 class WidenGap(BaseModel):
@@ -70,26 +68,13 @@ class SetPhysics(BaseModel):
     value: float
 
 
-class FireballSettings(BaseModel):
-    enabled: Optional[bool] = None
-    speed: Optional[int] = None
-    cooldown_ms: Optional[int] = None
-    bounces: Optional[int] = None
-
-
-class SetAbility(BaseModel):
-    op: Literal["set_ability"]
-    ability: Literal["fireball"]
-    settings: FireballSettings = FireballSettings()
-
-
 class Unsupported(BaseModel):
     op: Literal["unsupported"]
     reason: str = Field(description="what part of the command these operations can't express")
 
 
 IntentOp = Annotated[Union[WidenGap, ShrinkPlatform, AddEnemy, AddHazardNear, AddCoins, Remove, SetProperty,
-                           SetPhysics, SetAbility, Unsupported], Field(discriminator="op")]
+                           SetPhysics, Unsupported], Field(discriminator="op")]
 
 
 class IntentPatch(BaseModel):
@@ -383,21 +368,6 @@ def set_physics(ed: Editor, op: SetPhysics):
         ed.done.append(f"{'raised' if v > old else 'lowered'} {name} to {v:g}")
 
 
-def set_ability(ed: Editor, op: SetAbility):
-    cur = {**FIREBALL_DEFAULTS, **ed.d.get("abilities", {}).get(op.ability, {})}
-    for k, v in op.settings.model_dump(exclude_none=True).items():
-        if k in FIREBALL_LIMITS:
-            lo, hi = FIREBALL_LIMITS[k]
-            if not lo <= v <= hi:
-                ed.repairs.append(f"fireball {k} clamped {v} -> {min(max(v, lo), hi)} (allowed {lo}-{hi})")
-                v = min(max(v, lo), hi)
-        cur[k] = v
-    if "enabled" not in op.settings.model_dump(exclude_none=True) and op.ability not in ed.d.get("abilities", {}):
-        cur["enabled"] = True
-    ed.set_ability(op.ability, cur)
-    ed.done.append(f"turned on fireballs (press {cur['key']})" if cur["enabled"] else "turned off fireballs")
-
-
 def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None) -> Editor:
     """Apply intent ops to a copy of level. Inspect ed.errors (unfixable), ed.repairs, ed.done; ed.diff(); ed.result()."""
     ed = Editor(level, player)
@@ -442,7 +412,5 @@ def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None
                 ed.done.append(f"changed {e['type']} {k}")
         elif op.op == "set_physics":
             set_physics(ed, op)
-        elif op.op == "set_ability":
-            set_ability(ed, op)
     ed.autofix()
     return ed
