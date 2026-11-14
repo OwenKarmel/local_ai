@@ -46,6 +46,7 @@ Level state lives on the backend, in memory, as a stack of versions (loaded from
 - Keep `backend/levels/sample.json` loading and playable at all times.
 - Physics numbers only in the shared config (once A3 lands).
 - Contract changes need a decisions-log entry in plan.md and a heads-up.
+- Never read, search, or edit the bundled Phaser file (`frontend/vendor/phaser.min.js`); it's a third-party library and reading it wastes context. Use the Phaser 3 API from memory or its official docs. When searching the codebase, exclude it.
 - Never add Claude as a co-author or contributor: no `Co-Authored-By: Claude …` trailer, no "Generated with Claude Code" line.
 
 ## Git and PR workflow
