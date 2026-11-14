@@ -1,14 +1,21 @@
 # testbonsai
 
-Local test setup for running Ternary-Bonsai-2-9B with an Open WebUI frontend (WSL2, GTX 1650 4 GB).
+Local setup for running Ternary-Bonsai-2 (2B or 9B) on a non-Mac machine (WSL2, GTX 1650 4 GB): drives the game's `/api/command`, plus an optional Open WebUI chat frontend.
 
 ## Contents
-- `start-llama-server.sh`: llama-server (CUDA build) serving `bonsai-9b`, 16k context, full GPU offload, at `http://127.0.0.1:8080/v1`.
+- `run-game.sh [2b|9b] [--no-think]` (default 2b; `--no-think` sets `NO_THINKING=1` so the model skips its reasoning phase): starts llama-server with that model (unless one already serves it) and the game backend pointed at it. Every command goes to the model; there is no stub mode.
+- `start-llama-server.sh [2b|9b]`: llama-server (CUDA build) serving `bonsai-2b` (default) or `bonsai-9b`, 16k context, full GPU offload, at `http://127.0.0.1:8080/v1`.
 - `start-openwebui.sh`: Open WebUI at `http://localhost:3000`, pointed at the llama-server. Uses `uv` to provide Python 3.11.
 
-Both scripts expect a `~/localAI` directory containing the llama.cpp CUDA/CPU builds (`bin-cuda/`), CUDA libs (`libs/`), `tools/uv/uv`, and `models/Ternary-Bonsai-2-9B-PQ2_0.gguf`. None of those are committed (weights, binaries and chat data stay out of git).
+Both scripts expect a `~/localAI` directory containing the llama.cpp CUDA/CPU builds (`bin-cuda/`), CUDA libs (`libs/`), `tools/uv/uv`, and `models/Ternary-Bonsai-2-{2B,9B}-PQ2_0.gguf`. None of those are committed (weights, binaries and chat data stay out of git).
 
 ## Run
+Game (then open http://localhost:8000):
+```
+testbonsai/run-game.sh         # 2B (default); pass 9b for the slower, more accurate model
+testbonsai/run-game.sh --no-think   # skip model reasoning: "add two enemies near the end" took 5-6 s vs 13-17 s
+```
+Chat UI only:
 ```
 ~/localAI/start-llama-server.sh &
 ~/localAI/start-openwebui.sh &

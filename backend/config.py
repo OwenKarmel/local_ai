@@ -17,9 +17,9 @@ FAST_BASE_URL = os.environ.get("FAST_BASE_URL", BONSAI_BASE_URL)
 # default port. See CLAUDE.md "Argmax setup".
 ARGMAX_URL = os.environ.get("ARGMAX_URL", "http://localhost:50060/v1")
 
-# STUB_COMMANDS=1: /api/command answers with canned keyword responses (no model server needed),
-# so the frontend can be built and tested on any machine.
-STUB_COMMANDS = os.environ.get("STUB_COMMANDS", "").strip().lower() in ("1", "true", "yes")
+# NO_THINKING=1: ask the model server to skip the model's reasoning (<think>) phase on every request, via
+# chat_template_kwargs.enable_thinking=false. Faster commands; llama-server's Bonsai template thinks by default.
+NO_THINKING = os.environ.get("NO_THINKING", "").strip().lower() in ("1", "true", "yes")
 
 # STUB_SPEECH=1: /api/transcribe returns fixed text (no Argmax server needed; any machine).
 STUB_SPEECH = os.environ.get("STUB_SPEECH", "").strip().lower() in ("1", "true", "yes")
