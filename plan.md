@@ -8,7 +8,7 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 **Out (Later):** voice input (Argmax transcription), text-to-speech, playability/reachability checker, multiplayer.
 
 ## Milestones
-- [ ] 1. Game runtime: sample level, platforms/hazards/enemies/coins/double jump/goal, coyote time, camera, restart, win
+- [x] 1. Game runtime: sample level, platforms/hazards/enemies/coins/double jump/goal, coyote time, camera, restart, win
 - [ ] 2. Level editing with model: command box, patch ops, structured output, Pydantic validation + 2 retries, side-panel log, version history + undo, latency display
 - [ ] 3. Engine edits: model writes behaviors in mechanics.js, versioned, `node --check`, runtime error → report → auto-rollback (+ optional 1 repair)
 - [ ] 4. Canvas drawing: pen, stroke grouping, bbox → tile snap, vision labeling + pen-color fallback, apply as patch
@@ -16,7 +16,7 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 ## In progress
 | Task | Owner | Files touched |
 |---|---|---|
-| 1. Game runtime | Ashwin | backend/*, frontend/index.html, frontend/game.js, frontend/mechanics.js, frontend/vendor/ |
+| — | — | — |
 
 ## Decisions log
 | Time | Decision | Reason |
@@ -26,14 +26,18 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 | 11-14 | Level state lives on backend, in memory | One source of truth for version history |
 | 11-14 | Enemy patrol lives in mechanics.js from day one | Feature 3 needs the registry anyway; avoids a refactor |
 | 11-14 | Phaser 3.80.1 vendored, no build step | Offline + zero tooling |
+| 11-14 | All textures drawn in code (generateTexture) | No image assets to manage; offline |
+| 11-14 | Hazard hitboxes are inset zones, not full tiles | Forgiving feel; spikes only hurt near the bottom |
+| 11-14 | Patch Pydantic models already in schema.py | Shared contract for feature 2 |
 
 ## Known issues
-- (none yet)
+- Game canvas is fixed 960x480; levels taller than 15 tiles scroll vertically via camera (fine), shorter ones show sky.
+- Behavior errors currently only disable that behavior + log; report/rollback is feature 3.
 
 ## Next up
-1. Feature 1: game runtime (claimed)
-2. Feature 2: command box + `/api/command` + patch apply + undo
-3. Feature 2b: LLM client (`backend/llm.py`) with JSON-schema response format + retry loop
+1. Feature 2: `backend/llm.py` (OpenAI-compatible client, JSON-schema response format, fallback parse) + `POST /api/command {text, source}` with validate/retry ×2
+2. Feature 2: patch apply + version history + undo endpoint; command box, log, latency in side panel
+3. Feature 4 can start in parallel (frontend/draw.js only) since it reuses the patch pipeline
 
 ## Later
 - Voice input via Argmax local transcription → same command pipeline (`source: "voice"`)

@@ -39,7 +39,7 @@ Browser (one page, plain JS)                 FastAPI (Python)                 Lo
 ## File map
 | Path | What it does |
 |---|---|
-| `backend/main.py` | FastAPI app: serves `frontend/`, level API |
+| `backend/main.py` | FastAPI app: serves `frontend/`; `GET /api/level`, `POST /api/level/reset`, `GET /api/health` |
 | `backend/schema.py` | Pydantic models: `Level`, `Entity`, `Physics`, patch ops |
 | `backend/config.py` | Env-var config (model URL/name) |
 | `backend/levels/sample.json` | Handwritten sample level (must always work) |
@@ -99,6 +99,6 @@ Start LM Studio's local server (or `llama-server --port 1234`) with Bonsai loade
 
 ## Conventions
 - Python: type hints, Pydantic v2, keep endpoints in `main.py` until it hurts.
-- JS: plain browser scripts (no build step, no modules, no npm deps at runtime). Globals: `window.MECHANICS`, `window.Sketch2Game`.
+- JS: plain browser scripts (no build step, no modules, no npm deps at runtime). Globals: `window.MECHANICS`, `window.Sketch2Game` (`loadLevel(json)`, `log(msg, kind)`, `.level`, `.scene` for debugging).
 - Behavior signature: `MECHANICS.name = function (entity, scene, dt) {}` — `entity` is a Phaser sprite with `.def` (JSON), `.props`, `.state` (scratch object); `dt` in seconds.
 - No new dependencies without logging a decision in plan.md.

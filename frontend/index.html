@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sketch2Game</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #1e1f26; color: #e6e6e6; }
+    #app { display: flex; gap: 12px; padding: 12px; height: 100vh; }
+    #left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+    #game { border-radius: 6px; overflow: hidden; }
+    #game canvas { display: block; max-width: 100%; }
+    #help { font-size: 13px; color: #9aa; }
+    #panel { width: 340px; background: #272934; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    #panel h2 { margin: 0; font-size: 16px; }
+    #log { flex: 1; overflow-y: auto; font: 12px ui-monospace, monospace; background: #1b1c22; border-radius: 4px; padding: 8px; }
+    #log .entry { margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
+    #log .error { color: #ff7b7b; } #log .ok { color: #8be28b; } #log .info { color: #aab; }
+    button { background: #3b3f52; color: #eee; border: 0; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+    button:hover { background: #4b5068; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="left">
+      <div id="game"></div>
+      <div id="help">Arrows/WASD move · Space/Up/W jump · R restart</div>
+    </div>
+    <div id="panel">
+      <h2>Sketch2Game</h2>
+      <div><button id="reset-btn">Reset to sample level</button></div>
+      <div id="log"></div>
+    </div>
+  </div>
+  <script src="vendor/phaser.min.js"></script>
+  <script src="mechanics.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
