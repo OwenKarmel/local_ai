@@ -1,10 +1,15 @@
 // game.js — Phaser runtime. Builds a level from JSON and runs it.
-// Public API: window.Sketch2Game.loadLevel(levelJson), window.Sketch2Game.log(msg, kind)
+// Public API (window.Sketch2Game): loadLevel(levelJson), log(msg, kind), setAppearance(id, {sprite, tint}),
+//   setPlayerLook({sprite, tint}), debugProjectile(sprite, tint), .level, .scene
+// Sprites and effects come from sprites.js (window.SPRITES); see assets/catalog.json.
 (function () {
   const TILE = 32;
   const COYOTE_MS = 100;     // jump grace after leaving a ledge
   const JUMP_BUFFER_MS = 100; // jump pressed slightly before landing still counts
+  const PLAYER_W = 24, PLAYER_H = 30, ENEMY_W = 28, ENEMY_H = 24; // physics bodies (world px); art is skinned around them
+  const S = window.SPRITES;
   let currentLevel = null;
+  let playerLook = {}; // { sprite?, tint? }; survives restarts
 
   // ---------- side panel log ----------
   function log(msg, kind = "info") {
@@ -17,53 +22,29 @@
   }
   window.addEventListener("error", (e) => log(`JS error: ${e.message}`, "error"));
 
-  // ---------- textures (drawn in code: no image files, works offline) ----------
+  // ---------- fallback textures (drawn in code; used only when a sprite is missing) ----------
   function makeTextures(scene) {
     if (scene.textures.exists("player")) return;
     const g = scene.make.graphics({ add: false });
     const tex = (key, w, h, draw) => { g.clear(); draw(g); g.generateTexture(key, w, h); };
-
-    tex("player", 24, 30, (g) => {
-      g.fillStyle(0xe74c3c).fillRect(0, 0, 24, 30);
-      g.fillStyle(0x2c3e50).fillRect(0, 0, 24, 8);
-      g.fillStyle(0xffffff).fillRect(14, 10, 6, 6);
-    });
-    tex("enemy", 28, 24, (g) => {
-      g.fillStyle(0x8e5a2b).fillRoundedRect(0, 0, 28, 24, 8);
-      g.fillStyle(0xffffff).fillRect(4, 6, 6, 6).fillRect(18, 6, 6, 6);
-      g.fillStyle(0x000000).fillRect(4, 8, 3, 3).fillRect(18, 8, 3, 3);
-    });
-    tex("brick", TILE, TILE, (g) => {
-      g.fillStyle(0x6b4a2b).fillRect(0, 0, TILE, TILE);
-      g.fillStyle(0x4caf50).fillRect(0, 0, TILE, 6);
-      g.lineStyle(2, 0x553a20).strokeRect(1, 1, TILE - 2, TILE - 2);
-    });
-    tex("spike", TILE, TILE, (g) => {
-      g.fillStyle(0xbdc3c7);
-      g.fillTriangle(0, TILE, 8, 8, 16, TILE).fillTriangle(16, TILE, 24, 8, 32, TILE);
-    });
-    tex("lava", TILE, TILE, (g) => {
-      g.fillStyle(0xe67e22).fillRect(0, 0, TILE, TILE);
-      g.fillStyle(0xf1c40f).fillRect(0, 0, TILE, 5);
-    });
-    tex("coin", 16, 16, (g) => {
-      g.fillStyle(0xf1c40f).fillCircle(8, 8, 8);
-      g.fillStyle(0xf39c12).fillCircle(8, 8, 4);
-    });
-    tex("double_jump", 22, 22, (g) => {
-      g.fillStyle(0x3498db).fillTriangle(11, 0, 22, 11, 11, 22).fillTriangle(11, 0, 0, 11, 11, 22);
-      g.fillStyle(0xffffff).fillTriangle(11, 5, 16, 11, 6, 11);
-    });
-    tex("goal", TILE, TILE * 2, (g) => {
-      g.fillStyle(0xecf0f1).fillRect(14, 0, 4, TILE * 2);
-      g.fillStyle(0x9b59b6).fillTriangle(18, 2, 32, 10, 18, 18);
-    });
+    tex("player", PLAYER_W, PLAYER_H, (g) => g.fillStyle(0xe74c3c).fillRect(0, 0, PLAYER_W, PLAYER_H));
+    tex("enemy", ENEMY_W, ENEMY_H, (g) => g.fillStyle(0x8e5a2b).fillRect(0, 0, ENEMY_W, ENEMY_H));
+    tex("platform", TILE, TILE, (g) => { g.fillStyle(0x6b4a2b).fillRect(0, 0, TILE, TILE); g.lineStyle(2, 0x553a20).strokeRect(1, 1, TILE - 2, TILE - 2); });
+    tex("spikes", TILE, TILE, (g) => g.fillStyle(0xbdc3c7).fillRect(0, TILE / 2, TILE, TILE / 2));
+    tex("lava", TILE, TILE, (g) => g.fillStyle(0xe67e22).fillRect(0, 0, TILE, TILE));
+    tex("coin", 16, 16, (g) => g.fillStyle(0xf1c40f).fillRect(0, 0, 16, 16));
+    tex("double_jump", 22, 22, (g) => g.fillStyle(0x3498db).fillRect(0, 0, 22, 22));
+    tex("goal", TILE, TILE * 2, (g) => g.fillStyle(0x9b59b6).fillRect(0, 0, TILE, TILE * 2));
+    tex("fx_dot", 8, 8, (g) => g.fillStyle(0xffffff).fillCircle(4, 4, 4));
+    tex("fx_ball", 14, 14, (g) => g.fillStyle(0xffffff).fillCircle(7, 7, 7));
     g.destroy();
   }
 
   // ---------- scene ----------
   class GameScene extends Phaser.Scene {
     constructor() { super("game"); this.TILE = TILE; }
+
+    preload() { S.preload(this); }
 
     create() {
       const L = currentLevel;
@@ -79,24 +60,29 @@
       this.jumpBufferUntil = 0;
 
       makeTextures(this);
+      S.createAnims(this);
       const W = L.width * TILE, H = L.height * TILE;
       this.worldH = H;
       this.physics.world.gravity.y = L.physics.gravity;
       this.physics.world.setBounds(0, 0, W, H);
       this.physics.world.setBoundsCollision(true, true, true, false); // can fall out the bottom
-      this.cameras.main.setBounds(0, 0, W, H).setBackgroundColor("#6ec6ff");
+      this.cameras.main.setBounds(0, 0, W, H).setBackgroundColor("#cfefff");
+      this.makeBackground();
+      S.fx.init(this);
 
       this.platforms = this.physics.add.staticGroup();
       this.hazards = this.physics.add.staticGroup();
       this.items = this.physics.add.staticGroup();
       this.enemies = this.physics.add.group();
       this.behaving = []; // sprites with behaviors
+      this.byId = {};     // entity id -> game object
 
       for (const e of L.entities) this.spawnEntity(e);
 
-      // player
-      const sx = L.spawn.x * TILE + TILE / 2, sy = (L.spawn.y + 1) * TILE - 15;
-      this.player = this.physics.add.sprite(sx, sy, "player");
+      // player: sprite.x/y is the center of its 24x30 body
+      const sx = L.spawn.x * TILE + TILE / 2, sy = (L.spawn.y + 1) * TILE - PLAYER_H / 2;
+      this.player = this.physics.add.sprite(sx, sy, "player").setDepth(3);
+      this.skinPlayer();
       this.player.setCollideWorldBounds(true);
       this.player.body.setMaxVelocityY(1200);
 
@@ -120,33 +106,45 @@
       this.updateHud();
     }
 
+    // Parallax sky: clouds band on top, hills band at the bottom (skipped if the art is missing).
+    makeBackground() {
+      this.bg = [];
+      const band = (name, y, factor) => {
+        const e = S.catalog[name];
+        if (!e || !this.textures.exists(S.key(e.file))) return;
+        const ts = this.add.tileSprite(0, y, this.scale.width, e.size[1], S.key(e.file)).setOrigin(0, 0).setScrollFactor(0).setDepth(-10);
+        this.bg.push({ ts, factor });
+      };
+      const h = this.scale.height;
+      band("bg_sky", 0, 0);
+      band("bg_clouds", h - 512 + 56, 0.15);
+      band("bg_hills", h - 256 + 56, 0.35);
+    }
+
+    // ----- entities -----
     spawnEntity(e) {
       const w = (e.w || 1) * TILE, h = (e.h || 1) * TILE;
       const left = e.x * TILE, top = e.y * TILE, cx = left + w / 2, cy = top + h / 2;
       let obj = null;
       switch (e.type) {
         case "platform":
-          obj = this.add.tileSprite(cx, cy, w, h, "brick");
+          obj = this.add.zone(cx, cy, w, h);
           this.platforms.add(obj);
           break;
         case "spikes":
-        case "lava": {
-          obj = this.add.tileSprite(cx, cy, w, h, e.type === "spikes" ? "spike" : "lava");
+        case "lava":
           // forgiving hitbox: lower part of the tiles
-          const zone = this.add.zone(cx, top + h * 0.65, w - 6, h * 0.6);
-          this.hazards.add(zone);
+          obj = this.add.zone(cx, top + h * 0.65, w - 6, h * 0.6);
+          this.hazards.add(obj);
           break;
-        }
         case "enemy":
-          obj = this.enemies.create(cx, top + h - 12, "enemy");
+          obj = this.enemies.create(cx, top + h - ENEMY_H / 2, "enemy").setDepth(2);
           obj.setCollideWorldBounds(true);
           break;
         case "coin":
         case "double_jump":
-          obj = this.items.create(cx, cy, e.type);
-          break;
         case "goal":
-          obj = this.items.create(cx, top + h - TILE, "goal");
+          obj = this.items.create(cx, cy, e.type).setDepth(1);
           break;
         default:
           log(`Unknown entity type '${e.type}' (${e.id})`, "error");
@@ -156,13 +154,60 @@
       obj.props = e.props || {};
       obj.state = {};
       obj.disabledBehaviors = new Set();
+      this.byId[e.id] = obj;
+      this.skinEntity(obj);
       if (e.behaviors && e.behaviors.length) this.behaving.push(obj);
+    }
+
+    // (Re)apply an entity's look from def.sprite / def.tint. Safe to call any time; never throws on bad names.
+    skinEntity(obj) {
+      const e = obj.def, t = e.type;
+      const w = (e.w || 1) * TILE, h = (e.h || 1) * TILE;
+      const left = e.x * TILE, top = e.y * TILE, cx = left + w / 2, cy = top + h / 2;
+      const entry = S.resolve(this, t, e.sprite);
+      if (t === "platform" || t === "spikes" || t === "lava") {
+        (obj.visuals || []).forEach((v) => v.destroy());
+        obj.visuals = S.buildArea(this, entry, t, left, top, e.w || 1, e.h || 1);
+      } else if (t === "enemy") {
+        S.skinDynamic(this, obj, entry, "enemy", ENEMY_W, ENEMY_H);
+        S.play(obj, "walk");
+      } else if (t === "coin") {
+        S.skinStatic(this, obj, entry, "coin", cx, cy, cx, cy, 16, 16);
+        S.play(obj, "spin");
+      } else if (t === "double_jump") {
+        S.skinStatic(this, obj, entry, "double_jump", cx, cy, cx, cy, 22, 22);
+        if (!obj.idleFx && obj.active) obj.idleFx = S.fx.idle(cx, cy);
+      } else if (t === "goal") {
+        // flag art is 2 tiles tall with the pole on its left edge; hitbox stays the full entity rect
+        const artX = entry ? left + (entry.size[0] * (entry.scale || 1)) / 2 + 6 : cx;
+        const artY = entry ? top + h - (entry.size[1] * (entry.scale || 1)) / 2 : cy;
+        S.skinStatic(this, obj, entry, "goal", artX, artY, cx, cy, w, h);
+        S.play(obj, "wave");
+      }
+      S.applyTint(obj, entry, e.tint);
+    }
+
+    skinPlayer() {
+      const entry = S.resolve(this, "player", playerLook.sprite);
+      S.skinDynamic(this, this.player, entry, "player", PLAYER_W, PLAYER_H);
+      S.applyTint(this.player, entry, playerLook.tint);
+    }
+
+    // Live look change for one entity (used by live patching for update_entity with sprite/tint).
+    setAppearance(id, changes) {
+      const obj = this.byId[id];
+      if (!obj) { log(`setAppearance: no entity '${id}'`, "error"); return false; }
+      if ("sprite" in changes) obj.def.sprite = changes.sprite;
+      if ("tint" in changes) obj.def.tint = changes.tint;
+      this.skinEntity(obj);
+      return true;
     }
 
     hitEnemy(p, en) {
       if (this.dead || !en.active) return;
       const stomp = p.body.velocity.y > 0 && p.body.bottom <= en.body.top + 14;
       if (stomp) {
+        S.fx.burst(en.x, en.y, en.tintColor ?? 0xe9dcff, 12);
         en.disableBody(true, true);
         p.setVelocityY(-this.level.physics.jump_velocity * 0.6);
       } else {
@@ -173,9 +218,18 @@
     collect(it) {
       if (this.dead || this.won || !it.active) return;
       const t = it.def.type;
-      if (t === "coin") { this.coins++; it.disableBody(true, true); }
-      else if (t === "double_jump") { this.hasDoubleJump = true; it.disableBody(true, true); log("Double jump unlocked", "ok"); }
-      else if (t === "goal") { this.win(); }
+      if (t === "coin") {
+        this.coins++;
+        S.fx.sparkle(it.x, it.y, it.tintColor ?? 0xfff2a0);
+        it.disableBody(true, true);
+      } else if (t === "double_jump") {
+        this.hasDoubleJump = true;
+        if (it.idleFx) { it.idleFx.destroy(); it.idleFx = null; }
+        S.fx.sparkle(it.x, it.y, it.tintColor ?? 0xfff2a0, 14);
+        S.fx.flash(this);
+        it.disableBody(true, true);
+        log("Double jump unlocked", "ok");
+      } else if (t === "goal") { this.win(); }
       this.updateHud();
     }
 
@@ -186,7 +240,10 @@
     die(reason) {
       if (this.dead || this.won) return;
       this.dead = true;
-      this.player.setTint(0x000000);
+      const p = this.player;
+      S.play(p, "hit");
+      S.fx.burst(p.x, Math.min(p.y, this.worldH - 8), p.tintColor ?? 0xff6b5e, 18);
+      this.tweens.add({ targets: p, alpha: 0, duration: 350 });
       this.physics.pause();
       this.banner.setText(reason);
       this.time.delayedCall(800, () => this.scene.restart());
@@ -196,6 +253,7 @@
       if (this.won) return;
       this.won = true;
       this.physics.pause();
+      S.fx.sparkle(this.player.x, this.player.y - 10, 0xfff2a0, 20);
       this.banner.setText(`You win!\nCoins ${this.coins}/${this.totalCoins}\nPress R to play again`);
       log("Level complete", "ok");
     }
@@ -216,7 +274,6 @@
           } catch (err) {
             obj.disabledBehaviors.add(name);
             log(`Behavior '${name}' threw on ${obj.def.id}: ${err.message}`, "error");
-            // Feature 3: report to backend + roll back mechanics.js here.
           }
         }
       }
@@ -224,6 +281,7 @@
 
     update(time, delta) {
       const k = this.keys, c = this.cursors;
+      for (const b of this.bg) b.ts.tilePositionX = this.cameras.main.scrollX * b.factor;
       if (Phaser.Input.Keyboard.JustDown(k.R)) { this.scene.restart(); return; }
       if (this.dead || this.won) return;
 
@@ -250,10 +308,13 @@
           this.airJumpsUsed++;
           this.jumpedSinceGround = true;
           this.jumpBufferUntil = 0;
+          S.fx.sparkle(p.x, p.y + PLAYER_H / 2, 0xffffff, 5);
         }
       }
       // variable jump height: release early for a short hop
       if (!jumpHeld && p.body.velocity.y < -150) p.setVelocityY(p.body.velocity.y * 0.85);
+
+      S.play(p, !onGround ? "jump" : left !== right ? "run" : "idle");
 
       this.runBehaviors(delta / 1000);
 
@@ -264,15 +325,20 @@
   }
 
   // ---------- boot ----------
+  function activeScene() {
+    const scene = game && game.scene.getScene("game");
+    return scene && scene.sys.isActive() ? scene : null;
+  }
+
   function loadLevel(level) {
     currentLevel = level;
-    const scene = game && game.scene.getScene("game");
-    if (scene && scene.sys.isActive()) scene.scene.restart();
+    const scene = activeScene();
+    if (scene) scene.scene.restart();
   }
 
   let game = null;
   async function boot() {
-    const res = await fetch("/api/level");
+    const [res] = await Promise.all([fetch("/api/level"), S.init()]);
     currentLevel = await res.json();
     game = new Phaser.Game({
       type: Phaser.AUTO,
@@ -291,6 +357,20 @@
     log("Reset to sample level", "info");
   });
 
-  window.Sketch2Game = { loadLevel, log, get level() { return currentLevel; }, get scene() { return game && game.scene.getScene("game"); } };
+  window.Sketch2Game = {
+    loadLevel, log,
+    // Live look changes (no restart). Unknown sprite names fall back to the type's default.
+    setAppearance(id, changes) { const s = activeScene(); return s ? s.setAppearance(id, changes) : false; },
+    setPlayerLook(look) { playerLook = { ...playerLook, ...look }; const s = activeScene(); if (s) s.skinPlayer(); },
+    // Visual test for projectiles and trails until the fireball runtime (O7) exists.
+    debugProjectile(sprite, tint) {
+      const s = activeScene();
+      if (!s) return null;
+      const dir = s.player.flipX ? -1 : 1;
+      return S.spawnProjectile(s, s.player.x + dir * 20, s.player.y, dir, { sprite, tint });
+    },
+    get level() { return currentLevel; },
+    get scene() { return game && game.scene.getScene("game"); },
+  };
   boot();
 })();

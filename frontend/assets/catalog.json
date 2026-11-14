@@ -1,0 +1,989 @@
+{
+ "source": "Kenney New Platformer Pack 1.1 (kenney.nl), CC0. See sprites/License.txt. ball_white.png, effect_*.png are derived/generated.",
+ "defaults": {
+  "player": "player_green",
+  "platform": "platform_grass",
+  "spikes": "spikes",
+  "lava": "lava",
+  "enemy": "enemy_slime_purple",
+  "coin": "coin_gold",
+  "double_jump": "powerup_star",
+  "goal": "flag_green",
+  "projectile": "fireball_orange"
+ },
+ "sprites": [
+  {
+   "name": "player_green",
+   "type": "player",
+   "file": "character_green_idle.png",
+   "description": "green alien astronaut, the player character",
+   "size": [
+    128,
+    128
+   ],
+   "scale": 0.375,
+   "animations": {
+    "idle": {
+     "frames": [
+      "character_green_idle.png"
+     ],
+     "fps": 1
+    },
+    "run": {
+     "frames": [
+      "character_green_walk_a.png",
+      "character_green_walk_b.png"
+     ],
+     "fps": 8
+    },
+    "jump": {
+     "frames": [
+      "character_green_jump.png"
+     ],
+     "fps": 1
+    },
+    "hit": {
+     "frames": [
+      "character_green_hit.png"
+     ],
+     "fps": 1
+    }
+   }
+  },
+  {
+   "name": "player_pink",
+   "type": "player",
+   "file": "character_pink_idle.png",
+   "description": "pink alien astronaut, the player character",
+   "size": [
+    128,
+    128
+   ],
+   "scale": 0.375,
+   "animations": {
+    "idle": {
+     "frames": [
+      "character_pink_idle.png"
+     ],
+     "fps": 1
+    },
+    "run": {
+     "frames": [
+      "character_pink_walk_a.png",
+      "character_pink_walk_b.png"
+     ],
+     "fps": 8
+    },
+    "jump": {
+     "frames": [
+      "character_pink_jump.png"
+     ],
+     "fps": 1
+    },
+    "hit": {
+     "frames": [
+      "character_pink_hit.png"
+     ],
+     "fps": 1
+    }
+   }
+  },
+  {
+   "name": "player_yellow",
+   "type": "player",
+   "file": "character_yellow_idle.png",
+   "description": "yellow alien astronaut, the player character",
+   "size": [
+    128,
+    128
+   ],
+   "scale": 0.375,
+   "animations": {
+    "idle": {
+     "frames": [
+      "character_yellow_idle.png"
+     ],
+     "fps": 1
+    },
+    "run": {
+     "frames": [
+      "character_yellow_walk_a.png",
+      "character_yellow_walk_b.png"
+     ],
+     "fps": 8
+    },
+    "jump": {
+     "frames": [
+      "character_yellow_jump.png"
+     ],
+     "fps": 1
+    },
+    "hit": {
+     "frames": [
+      "character_yellow_hit.png"
+     ],
+     "fps": 1
+    }
+   }
+  },
+  {
+   "name": "player_purple",
+   "type": "player",
+   "file": "character_purple_idle.png",
+   "description": "purple alien astronaut, the player character",
+   "size": [
+    128,
+    128
+   ],
+   "scale": 0.375,
+   "animations": {
+    "idle": {
+     "frames": [
+      "character_purple_idle.png"
+     ],
+     "fps": 1
+    },
+    "run": {
+     "frames": [
+      "character_purple_walk_a.png",
+      "character_purple_walk_b.png"
+     ],
+     "fps": 8
+    },
+    "jump": {
+     "frames": [
+      "character_purple_jump.png"
+     ],
+     "fps": 1
+    },
+    "hit": {
+     "frames": [
+      "character_purple_hit.png"
+     ],
+     "fps": 1
+    }
+   }
+  },
+  {
+   "name": "player_beige",
+   "type": "player",
+   "file": "character_beige_idle.png",
+   "description": "beige alien astronaut, the player character",
+   "size": [
+    128,
+    128
+   ],
+   "scale": 0.375,
+   "animations": {
+    "idle": {
+     "frames": [
+      "character_beige_idle.png"
+     ],
+     "fps": 1
+    },
+    "run": {
+     "frames": [
+      "character_beige_walk_a.png",
+      "character_beige_walk_b.png"
+     ],
+     "fps": 8
+    },
+    "jump": {
+     "frames": [
+      "character_beige_jump.png"
+     ],
+     "fps": 1
+    },
+    "hit": {
+     "frames": [
+      "character_beige_hit.png"
+     ],
+     "fps": 1
+    }
+   }
+  },
+  {
+   "name": "platform_grass",
+   "type": "tile",
+   "file": "terrain_grass_block_top.png",
+   "description": "platform and ground tiles: green grass on brown dirt",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top_left": "terrain_grass_block_top_left.png",
+    "top": "terrain_grass_block_top.png",
+    "top_right": "terrain_grass_block_top_right.png",
+    "left": "terrain_grass_block_left.png",
+    "center": "terrain_grass_block_center.png",
+    "right": "terrain_grass_block_right.png",
+    "h_left": "terrain_grass_horizontal_left.png",
+    "h_middle": "terrain_grass_horizontal_middle.png",
+    "h_right": "terrain_grass_horizontal_right.png",
+    "single": "terrain_grass_block.png"
+   }
+  },
+  {
+   "name": "platform_dirt",
+   "type": "tile",
+   "file": "terrain_dirt_block_top.png",
+   "description": "platform and ground tiles: brown dirt",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top_left": "terrain_dirt_block_top_left.png",
+    "top": "terrain_dirt_block_top.png",
+    "top_right": "terrain_dirt_block_top_right.png",
+    "left": "terrain_dirt_block_left.png",
+    "center": "terrain_dirt_block_center.png",
+    "right": "terrain_dirt_block_right.png",
+    "h_left": "terrain_dirt_horizontal_left.png",
+    "h_middle": "terrain_dirt_horizontal_middle.png",
+    "h_right": "terrain_dirt_horizontal_right.png",
+    "single": "terrain_dirt_block.png"
+   }
+  },
+  {
+   "name": "platform_sand",
+   "type": "tile",
+   "file": "terrain_sand_block_top.png",
+   "description": "platform and ground tiles: yellow desert sand",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top_left": "terrain_sand_block_top_left.png",
+    "top": "terrain_sand_block_top.png",
+    "top_right": "terrain_sand_block_top_right.png",
+    "left": "terrain_sand_block_left.png",
+    "center": "terrain_sand_block_center.png",
+    "right": "terrain_sand_block_right.png",
+    "h_left": "terrain_sand_horizontal_left.png",
+    "h_middle": "terrain_sand_horizontal_middle.png",
+    "h_right": "terrain_sand_horizontal_right.png",
+    "single": "terrain_sand_block.png"
+   }
+  },
+  {
+   "name": "platform_snow",
+   "type": "tile",
+   "file": "terrain_snow_block_top.png",
+   "description": "platform and ground tiles: white snow on ice-blue ground",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top_left": "terrain_snow_block_top_left.png",
+    "top": "terrain_snow_block_top.png",
+    "top_right": "terrain_snow_block_top_right.png",
+    "left": "terrain_snow_block_left.png",
+    "center": "terrain_snow_block_center.png",
+    "right": "terrain_snow_block_right.png",
+    "h_left": "terrain_snow_horizontal_left.png",
+    "h_middle": "terrain_snow_horizontal_middle.png",
+    "h_right": "terrain_snow_horizontal_right.png",
+    "single": "terrain_snow_block.png"
+   }
+  },
+  {
+   "name": "platform_stone",
+   "type": "tile",
+   "file": "terrain_stone_block_top.png",
+   "description": "platform and ground tiles: grey stone",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top_left": "terrain_stone_block_top_left.png",
+    "top": "terrain_stone_block_top.png",
+    "top_right": "terrain_stone_block_top_right.png",
+    "left": "terrain_stone_block_left.png",
+    "center": "terrain_stone_block_center.png",
+    "right": "terrain_stone_block_right.png",
+    "h_left": "terrain_stone_horizontal_left.png",
+    "h_middle": "terrain_stone_horizontal_middle.png",
+    "h_right": "terrain_stone_horizontal_right.png",
+    "single": "terrain_stone_block.png"
+   }
+  },
+  {
+   "name": "platform_purple",
+   "type": "tile",
+   "file": "terrain_purple_block_top.png",
+   "description": "platform and ground tiles: purple alien grass",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top_left": "terrain_purple_block_top_left.png",
+    "top": "terrain_purple_block_top.png",
+    "top_right": "terrain_purple_block_top_right.png",
+    "left": "terrain_purple_block_left.png",
+    "center": "terrain_purple_block_center.png",
+    "right": "terrain_purple_block_right.png",
+    "h_left": "terrain_purple_horizontal_left.png",
+    "h_middle": "terrain_purple_horizontal_middle.png",
+    "h_right": "terrain_purple_horizontal_right.png",
+    "single": "terrain_purple_block.png"
+   }
+  },
+  {
+   "name": "spikes",
+   "type": "hazard",
+   "file": "spikes.png",
+   "description": "grey metal floor spikes",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "spike_block",
+   "type": "hazard",
+   "file": "block_spikes.png",
+   "description": "block covered in spikes",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "saw",
+   "type": "hazard",
+   "file": "saw.png",
+   "description": "grey circular saw blade",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "lava",
+   "type": "hazard",
+   "file": "lava_top.png",
+   "description": "orange bubbling lava",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top": "lava_top.png",
+    "center": "lava.png"
+   }
+  },
+  {
+   "name": "water",
+   "type": "hazard",
+   "file": "water_top.png",
+   "description": "blue water (still deadly, looks like water)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tiles": {
+    "top": "water_top.png",
+    "center": "water.png"
+   }
+  },
+  {
+   "name": "enemy_slime_purple",
+   "type": "enemy",
+   "file": "slime_normal_walk_a.png",
+   "description": "purple slime blob (default enemy)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "slime_normal_walk_a.png",
+      "slime_normal_walk_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_slime_fire",
+   "type": "enemy",
+   "file": "slime_fire_walk_a.png",
+   "description": "red slime with a flame on its head",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "slime_fire_walk_a.png",
+      "slime_fire_walk_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_slime_spike",
+   "type": "enemy",
+   "file": "slime_spike_walk_a.png",
+   "description": "slime with a spiky back",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "slime_spike_walk_a.png",
+      "slime_spike_walk_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_mouse",
+   "type": "enemy",
+   "file": "mouse_walk_a.png",
+   "description": "grey mouse",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "mouse_walk_a.png",
+      "mouse_walk_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_ladybug",
+   "type": "enemy",
+   "file": "ladybug_walk_a.png",
+   "description": "red ladybug with black spots",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "ladybug_walk_a.png",
+      "ladybug_walk_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_snail",
+   "type": "enemy",
+   "file": "snail_walk_a.png",
+   "description": "snail with a shell",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "snail_walk_a.png",
+      "snail_walk_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_frog",
+   "type": "enemy",
+   "file": "frog_idle.png",
+   "description": "green frog",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "frog_idle.png",
+      "frog_jump.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_bee",
+   "type": "enemy",
+   "file": "bee_a.png",
+   "description": "yellow striped bee",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "bee_a.png",
+      "bee_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_fly",
+   "type": "enemy",
+   "file": "fly_a.png",
+   "description": "black fly with wings",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "fly_a.png",
+      "fly_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "enemy_worm",
+   "type": "enemy",
+   "file": "worm_normal_move_a.png",
+   "description": "small pink worm",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "walk": {
+     "frames": [
+      "worm_normal_move_a.png",
+      "worm_normal_move_b.png"
+     ],
+     "fps": 5
+    }
+   }
+  },
+  {
+   "name": "coin_gold",
+   "type": "coin",
+   "file": "coin_gold.png",
+   "description": "gold coin",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "spin": {
+     "frames": [
+      "coin_gold.png",
+      "coin_gold_side.png"
+     ],
+     "fps": 4
+    }
+   }
+  },
+  {
+   "name": "coin_silver",
+   "type": "coin",
+   "file": "coin_silver.png",
+   "description": "silver coin",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "spin": {
+     "frames": [
+      "coin_silver.png",
+      "coin_silver_side.png"
+     ],
+     "fps": 4
+    }
+   }
+  },
+  {
+   "name": "coin_bronze",
+   "type": "coin",
+   "file": "coin_bronze.png",
+   "description": "bronze coin",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "animations": {
+    "spin": {
+     "frames": [
+      "coin_bronze.png",
+      "coin_bronze_side.png"
+     ],
+     "fps": 4
+    }
+   }
+  },
+  {
+   "name": "gem_blue",
+   "type": "coin",
+   "file": "gem_blue.png",
+   "description": "blue gem (collectible, counts as a coin)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "gem_green",
+   "type": "coin",
+   "file": "gem_green.png",
+   "description": "green gem (collectible, counts as a coin)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "gem_red",
+   "type": "coin",
+   "file": "gem_red.png",
+   "description": "red gem (collectible, counts as a coin)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "gem_yellow",
+   "type": "coin",
+   "file": "gem_yellow.png",
+   "description": "yellow gem (collectible, counts as a coin)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "powerup_star",
+   "type": "powerup",
+   "file": "star.png",
+   "description": "gold star (default double-jump power-up)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "powerup_heart",
+   "type": "powerup",
+   "file": "heart.png",
+   "description": "red heart",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "powerup_spring",
+   "type": "powerup",
+   "file": "spring.png",
+   "description": "metal spring",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "powerup_mushroom_red",
+   "type": "powerup",
+   "file": "mushroom_red.png",
+   "description": "red mushroom",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "powerup_mushroom_brown",
+   "type": "powerup",
+   "file": "mushroom_brown.png",
+   "description": "brown mushroom",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "flag_green",
+   "type": "goal",
+   "file": "flag_green_a.png",
+   "description": "green goal flag on a pole",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 1.0,
+   "animations": {
+    "wave": {
+     "frames": [
+      "flag_green_a.png",
+      "flag_green_b.png"
+     ],
+     "fps": 4
+    }
+   }
+  },
+  {
+   "name": "flag_red",
+   "type": "goal",
+   "file": "flag_red_a.png",
+   "description": "red goal flag on a pole",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 1.0,
+   "animations": {
+    "wave": {
+     "frames": [
+      "flag_red_a.png",
+      "flag_red_b.png"
+     ],
+     "fps": 4
+    }
+   }
+  },
+  {
+   "name": "flag_blue",
+   "type": "goal",
+   "file": "flag_blue_a.png",
+   "description": "blue goal flag on a pole",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 1.0,
+   "animations": {
+    "wave": {
+     "frames": [
+      "flag_blue_a.png",
+      "flag_blue_b.png"
+     ],
+     "fps": 4
+    }
+   }
+  },
+  {
+   "name": "flag_yellow",
+   "type": "goal",
+   "file": "flag_yellow_a.png",
+   "description": "yellow goal flag on a pole",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 1.0,
+   "animations": {
+    "wave": {
+     "frames": [
+      "flag_yellow_a.png",
+      "flag_yellow_b.png"
+     ],
+     "fps": 4
+    }
+   }
+  },
+  {
+   "name": "sign_exit",
+   "type": "goal",
+   "file": "sign_exit.png",
+   "description": "wooden exit sign",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 1.0
+  },
+  {
+   "name": "fireball_orange",
+   "type": "projectile",
+   "file": "fireball.png",
+   "description": "orange fireball (default projectile)",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "trail": "#ff9a2e"
+  },
+  {
+   "name": "ball_white",
+   "type": "projectile",
+   "file": "ball_white.png",
+   "description": "white energy ball; set tint to color it",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "iceball_blue",
+   "type": "projectile",
+   "file": "ball_white.png",
+   "description": "icy blue ball",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tint": "#6fd0ff"
+  },
+  {
+   "name": "fireball_red",
+   "type": "projectile",
+   "file": "ball_white.png",
+   "description": "red fireball",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tint": "#ff4a3d"
+  },
+  {
+   "name": "energy_ball_purple",
+   "type": "projectile",
+   "file": "ball_white.png",
+   "description": "purple energy ball",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tint": "#b46bff"
+  },
+  {
+   "name": "energy_ball_green",
+   "type": "projectile",
+   "file": "ball_white.png",
+   "description": "green energy ball",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5,
+   "tint": "#5dff8a"
+  },
+  {
+   "name": "bomb",
+   "type": "projectile",
+   "file": "bomb.png",
+   "description": "round black bomb",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "effect_spark",
+   "type": "effect",
+   "file": "effect_spark.png",
+   "description": "soft white dot particle (trails, bursts)",
+   "size": [
+    16,
+    16
+   ]
+  },
+  {
+   "name": "effect_star",
+   "type": "effect",
+   "file": "effect_star.png",
+   "description": "white star particle (sparkles)",
+   "size": [
+    24,
+    24
+   ]
+  },
+  {
+   "name": "bg_sky",
+   "type": "background",
+   "file": "background_solid_sky.png",
+   "description": "plain light-blue sky",
+   "size": [
+    256,
+    256
+   ]
+  },
+  {
+   "name": "bg_clouds",
+   "type": "background",
+   "file": "background_clouds.png",
+   "description": "cloud band",
+   "size": [
+    256,
+    256
+   ]
+  },
+  {
+   "name": "bg_hills",
+   "type": "background",
+   "file": "background_color_hills.png",
+   "description": "green rolling hills",
+   "size": [
+    256,
+    256
+   ]
+  }
+ ]
+}

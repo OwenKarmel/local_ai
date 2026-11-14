@@ -81,6 +81,11 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game plus side panel |
 | `frontend/game.js` | Phaser scene: builds the level from JSON, player controls, collisions, win/death |
+| `frontend/sprites.js` | `window.SPRITES`: loads the sprite catalog, skins entities (with fallbacks), particle effects, projectile visuals |
+| `frontend/assets/catalog.json` | Sprite catalog: name, file, type, description, size, animations, tilesets, per-type defaults |
+| `frontend/assets/catalog.txt` | Compact `name: description` list for model prompts |
+| `frontend/assets/sprites/` | The PNGs we use (about 200 KB) plus `License.txt` |
+| `tools/build_catalog.py` | Rebuilds `frontend/assets/` from a downloaded Kenney pack |
 | `frontend/mechanics.js` | Behavior registry (`patrol`). The only file model-written code may go in |
 | `frontend/vendor/phaser.min.js` | Phaser 3.80.1, bundled locally |
 | `testbonsai/` | Dev-only: run Bonsai 2 GGUF with llama.cpp (CUDA) + Open WebUI on a non-Mac machine (WSL2). Not part of the demo |
@@ -107,15 +112,23 @@ The source of truth is **plan.md → "Interface contracts"**: `/api/transcribe`,
   "spawn": { "x": 2, "y": 11 },
   "entities": [
     { "id": "ground1", "type": "platform", "x": 0, "y": 13, "w": 14, "h": 2 },
-    { "id": "enemy1", "type": "enemy", "x": 23, "y": 12, "behaviors": ["patrol"], "props": { "speed": 60, "range": 3 } }
+    { "id": "enemy1", "type": "enemy", "x": 23, "y": 12, "behaviors": ["patrol"], "props": { "speed": 60, "range": 3 }, "sprite": "enemy_frog", "tint": "#3399ff" }
   ]
 }
 ```
 - `type` ∈ `platform | spikes | lava | enemy | coin | double_jump | goal`.
 - `x, y` = top-left tile; `w, h` = size in tiles (default 1). Must lie inside `width × height`. `id`s unique.
 - `behaviors`: names of functions in `MECHANICS`. `props`: free-form scalars read by behaviors.
+- `sprite`, `tint`: optional, default `null`. See "Assets and sprites".
 - `abilities`: optional, default `{}`. Fireball fields are finalized by A9.
 - Spikes/lava kill on touch. Enemies die when stomped from above, kill otherwise. `double_jump` grants one air jump. `goal` = win.
+
+## Assets and sprites
+- **Art:** Kenney "New Platformer Pack 1.1" (kenney.nl), **CC0** (public domain; credit optional). The license file is at `frontend/assets/sprites/License.txt`. `ball_white.png` and `effect_*.png` are derived or generated from it. No other art sources without checking the license; never Nintendo or other copyrighted game art.
+- Only the sprites we use are in the repo. Never commit the full downloaded pack. To add sprites: edit `tools/build_catalog.py`, then run `python tools/build_catalog.py <extracted pack folder>` (needs Pillow).
+- Entities take optional `sprite` (a catalog name) and `tint` (hex like `#3399ff`). Unknown sprite name → the type's default sprite → a plain colored rectangle. The game never crashes on a bad name or tint.
+- Physics bodies do not depend on the art: player 24×30, enemy 28×24, whatever sprite is used.
+- Live look changes: `Sketch2Game.setAppearance(id, {sprite, tint})`, `Sketch2Game.setPlayerLook({sprite, tint})`. Projectile visuals: `SPRITES.spawnProjectile(scene, x, y, dir, {sprite, tint, speed})` and `SPRITES.setProjectileLook(scene, projectile, {sprite, tint})`.
 
 ## Working without a Mac (Windows, Linux, or a Mac without the models)
 Everything except the models and Argmax runs anywhere: the game, the backend, the stub endpoints, and the playability checker. Needs Python 3.10+, git, and `gh` logged in (`gh auth login`).
