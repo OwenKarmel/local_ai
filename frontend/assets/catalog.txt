@@ -1,0 +1,59 @@
+# Sprite catalog: name: description. Use a name as an entity's "sprite". "tint" is any hex color like #3399ff.
+[player]
+player_green: green alien astronaut, the player character
+player_pink: pink alien astronaut, the player character
+player_yellow: yellow alien astronaut, the player character
+player_purple: purple alien astronaut, the player character
+player_beige: beige alien astronaut, the player character
+[tile]
+platform_grass: platform and ground tiles: green grass on brown dirt
+platform_dirt: platform and ground tiles: brown dirt
+platform_sand: platform and ground tiles: yellow desert sand
+platform_snow: platform and ground tiles: white snow on ice-blue ground
+platform_stone: platform and ground tiles: grey stone
+platform_purple: platform and ground tiles: purple alien grass
+[hazard]
+spikes: grey metal floor spikes
+spike_block: block covered in spikes
+saw: grey circular saw blade
+lava: orange bubbling lava
+water: blue water (still deadly, looks like water)
+[enemy]
+enemy_slime_purple: purple slime blob (default enemy)
+enemy_slime_fire: red slime with a flame on its head
+enemy_slime_spike: slime with a spiky back
+enemy_mouse: grey mouse
+enemy_ladybug: red ladybug with black spots
+enemy_snail: snail with a shell
+enemy_frog: green frog
+enemy_bee: yellow striped bee
+enemy_fly: black fly with wings
+enemy_worm: small pink worm
+[coin]
+coin_gold: gold coin
+coin_silver: silver coin
+coin_bronze: bronze coin
+gem_blue: blue gem (collectible, counts as a coin)
+gem_green: green gem (collectible, counts as a coin)
+gem_red: red gem (collectible, counts as a coin)
+gem_yellow: yellow gem (collectible, counts as a coin)
+[powerup]
+powerup_star: gold star (default double-jump power-up)
+powerup_heart: red heart
+powerup_spring: metal spring
+powerup_mushroom_red: red mushroom
+powerup_mushroom_brown: brown mushroom
+[goal]
+flag_green: green goal flag on a pole
+flag_red: red goal flag on a pole
+flag_blue: blue goal flag on a pole
+flag_yellow: yellow goal flag on a pole
+sign_exit: wooden exit sign
+[projectile]
+fireball_orange: orange fireball (default projectile)
+ball_white: white energy ball; set tint to color it
+iceball_blue: icy blue ball
+fireball_red: red fireball
+energy_ball_purple: purple energy ball
+energy_ball_green: green energy ball
+bomb: round black bomb

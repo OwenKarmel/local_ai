@@ -1,5 +1,5 @@
 """Pydantic models for level data and patches. See CLAUDE.md for the schema."""
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -27,6 +27,8 @@ class Entity(BaseModel):
     h: int = Field(1, ge=1)
     behaviors: list[str] = []
     props: dict[str, Scalar] = {}
+    sprite: Optional[str] = None  # name from frontend/assets/catalog.json; unknown names fall back to the type default
+    tint: Optional[str] = None    # hex color like "#3399ff"
 
 
 class Level(BaseModel):
