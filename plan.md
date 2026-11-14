@@ -29,6 +29,7 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 | 11-14 | All textures drawn in code (generateTexture) | No image assets to manage; offline |
 | 11-14 | Hazard hitboxes are inset zones, not full tiles | Forgiving feel; spikes only hurt near the bottom |
 | 11-14 | Patch Pydantic models already in schema.py | Shared contract for feature 2 |
+| 11-14 | Sample level shortened to 40 wide, 4 coins (schema still allows up to 400) | Faster manual testing; still has every entity type |
 
 ## Known issues
 - Game canvas is fixed 960x480; levels taller than 15 tiles scroll vertically via camera (fine), shorter ones show sky.

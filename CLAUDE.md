@@ -42,7 +42,7 @@ Browser (one page, plain JS)                 FastAPI (Python)                 Lo
 | `backend/main.py` | FastAPI app: serves `frontend/`; `GET /api/level`, `POST /api/level/reset`, `GET /api/health` |
 | `backend/schema.py` | Pydantic models: `Level`, `Entity`, `Physics`, patch ops |
 | `backend/config.py` | Env-var config (model URL/name) |
-| `backend/levels/sample.json` | Handwritten sample level (must always work) |
+| `backend/levels/sample.json` | Handwritten sample level, 40×15, 4 coins (must always work) |
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game left, side panel right |
 | `frontend/game.js` | Phaser scene: builds level from JSON, player controls, collisions, win/death |
@@ -53,7 +53,7 @@ Browser (one page, plain JS)                 FastAPI (Python)                 Lo
 ```json
 {
   "name": "Sample",
-  "tile_size": 32, "width": 80, "height": 15,
+  "tile_size": 32, "width": 40, "height": 15,
   "physics": { "gravity": 1200, "jump_velocity": 560, "run_speed": 200 },
   "spawn": { "x": 2, "y": 11 },
   "entities": [
