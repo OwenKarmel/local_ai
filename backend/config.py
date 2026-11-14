@@ -13,10 +13,13 @@ FAST_MODEL = os.environ.get("FAST_MODEL", f"{_MODELS}/Ternary-Bonsai-2-4B-mlx-2b
 # second server for FAST_MODEL on another port and point FAST_BASE_URL at it.
 FAST_BASE_URL = os.environ.get("FAST_BASE_URL", BONSAI_BASE_URL)
 
-# Argmax local speech server (WhisperKit transcription; OpenAI-compatible /audio/transcriptions). Port is a placeholder until
-# Owen's Argmax setup confirms it; override with ARGMAX_URL.
+# Argmax local speech server: `argmax-cli serve` (WhisperKit, OpenAI-compatible /audio/transcriptions). 50060 is its
+# default port. See CLAUDE.md "Argmax setup".
 ARGMAX_URL = os.environ.get("ARGMAX_URL", "http://localhost:50060/v1")
 
 # STUB_COMMANDS=1: /api/command answers with canned keyword responses (no model server needed),
 # so the frontend can be built and tested on any machine.
 STUB_COMMANDS = os.environ.get("STUB_COMMANDS", "").strip().lower() in ("1", "true", "yes")
+
+# STUB_SPEECH=1: /api/transcribe returns fixed text (no Argmax server needed; any machine).
+STUB_SPEECH = os.environ.get("STUB_SPEECH", "").strip().lower() in ("1", "true", "yes")
