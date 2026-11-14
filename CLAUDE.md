@@ -95,13 +95,14 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game plus side panel |
 | `frontend/game.js` | Phaser scene: builds the level from JSON, player controls, collisions, win/death |
+| `scripts/exp_raw_ability.py` | Ability experiment: model writes an ability (raw Phaser or `--api`), syntax-checked; output in `frontend/exp/` (gitignored). See plan.md "Ability experiment" |
 | `frontend/voice.js` | Hold-to-talk (button or V), listening badge + mic meter, typed fallback; calls `/api/transcribe`, `/api/command`, `/api/speak` |
 | `frontend/sprites.js` | `window.SPRITES`: loads the sprite catalog, skins entities (with fallbacks), particle effects, projectile visuals |
 | `frontend/assets/catalog.json` | Sprite catalog: name, file, type, description, size, animations, tilesets, per-type defaults |
 | `frontend/assets/catalog.txt` | Compact `name: description` list for model prompts |
 | `frontend/assets/sprites/` | The PNGs we use (about 200 KB) plus `License.txt` |
 | `tools/build_catalog.py` | Rebuilds `frontend/assets/` from a downloaded Kenney pack |
-| `frontend/mechanics.js` | Behavior registry (`patrol`). The only file model-written code may go in |
+| `frontend/mechanics.js` | Model-written code lives here. `MECHANICS` (per-entity behaviors like `patrol`), `ABILITIES` (model-written abilities: `setup(scene, api)` / `update(scene, dt, api)`), and `makeMechanicsApi` (the building blocks abilities code against) |
 | `frontend/vendor/phaser.min.js` | Phaser 3.80.1, bundled locally |
 | `testbonsai/` | Dev-only: run Bonsai 2 GGUF with llama.cpp (CUDA) + Open WebUI on a non-Mac machine (WSL2). Not part of the demo |
 

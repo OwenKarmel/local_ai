@@ -6,6 +6,34 @@
 
 Cornell Local AI Hackathon, theme "Recreate". Submissions due noon Sunday: 2-minute video, GitHub link, one-sentence description. Top 10 do a 4-minute live demo for the PrismML and Argmax founders. Never use "Mario" or any Nintendo name in code, UI, docs, narration or captions.
 
+## Tonight (in order) — start here
+1. **Finish the helper-API fireball experiment (task 5/6)**, branch `t5-6-mechanics-sandbox`. Results so far are under "Ability experiment" below. If it reaches 4/5 working on a model with acceptable latency, wire model-written abilities into `/api/command` (task 6). If it doesn't, the fallback is a demo **without** fireballs. Cut Beat 4; never fake it.
+2. **Playability checker (tasks 10–12), critical for Beat 6.** Unclaimed; Owen is the natural owner (pure Python, runs on his Acer). Interface below.
+3. **Merge PR #11 (live patching, Owen)** after review; then applied commands stop restarting the run.
+4. **Record a rough backup video** (task 20) once "make this harder", "put a block here" (tasks 8–9) and the refusal work without restarts.
+5. **TTSKit copilot voice** (task 14, 🍎).
+6. Then: **undo as a model op** (maps to `/api/undo`), **fix the over-cautious refusal** ("add enemies throughout the map" was refused; fix with prompt context or a non-demo example, not a special case), **moving platforms** (moving solid bodies in the API; test riding one without sliding; edits that add movement report checker "not verified").
+
+## Ability experiment (tasks 5–6): "give me fireball powers"
+Script: `scripts/exp_raw_ability.py`. Generated code goes to `frontend/exp/` (gitignored). A browser check installs each attempt, places a stationary enemy 5 tiles ahead, presses the model's key, and passes only if the enemy is defeated within 1.5 s with no runtime error. Repairs feed back only syntax/runtime errors, like production.
+
+**Raw Phaser (no helpers): 0/10.**
+| Model | Attempt 1 | Repair | Lines | Latency per attempt |
+|---|---|---|---|---|
+| 4B | 0/5: runtime error, invented `setLife()` | 0/5: renamed to `setMaxLife()`, also invented | 34 | 19–36 s (repair 16–18 s) |
+| 9B | 0/5: projectile fired, no hit detection, enemy survived (no error, so no repair) | — | 28 | 28–58 s |
+
+A first try with temperature 0.3 and no presence penalty made the 4B loop on one line until `max_tokens`. The model card's sampler (0.7 / 0.8 / 20 / presence 1.5) fixed that and is used above.
+
+**With the helper API (`makeMechanicsApi` in `frontend/mechanics.js`: key, spawn, onHit, defeat, enemies, facing, after/every/now): PENDING.**
+- 4B: all 5 first attempts had syntax errors; the immediate repair passed the syntax check (19 lines, 12–25 s). **Behavior not browser-tested yet.**
+- 9B: generation was still running at handoff.
+- Rerun everything (needs the Bonsai server on :1234 with the 4B and 9B on disk):
+  ```bash
+  python scripts/exp_raw_ability.py gen --api --models 4B,9B --runs 5
+  ```
+  Then reload http://localhost:8000 and run the browser check. It's the `window.__exp(ids)` harness described in the PR; it can be pasted into the devtools console.
+
 ## Final goal: the demo script
 Acceptance checks test properties, not exact outputs, since model output varies. **The level must stay beatable after every beat.** `scripts/demo_check.py` (task 17) automates Beats 3–6.
 
@@ -29,13 +57,13 @@ Status: `todo`, `doing (<name>)`, `in review (PR #n)`, `done`. **Claim a task by
 | 2 | 🍎 Argmax speech-to-text | 3–6 | — | `backend/speech.py`, `backend/main.py` | Real voice transcribes correctly with Wi-Fi off | done (PR #6). Real voice and Wi-Fi-off not verified yet |
 | 3 | Hold-to-talk (button + V key, listening indicator, typed fallback) | 3–6 | 2 | `frontend/voice.js`, `frontend/index.html` | Hold V mid-run, speak, command runs | done (PR #7). Real voice through the browser not verified yet |
 | 4 | Remove hardcoded command handling (see "Hardcoding audit") | all | — | `backend/intents.py`, `backend/prompts.py` | Nothing on the audit list remains | in review (PR #9) |
-| 5 | Mechanics API + compact reference (one line per function) for the prompt: spawn entities and projectiles, physics bodies, velocity, collisions, input keys, timers, entity properties, tint and sprite | 4 | — | `frontend/mechanics.js` (API section), reference text for the prompt | A hand-written test ability of 10–30 lines (not shipped) works using only the API | todo |
-| 6 | Model-written abilities through the sandbox: code only in mechanics.js, syntax check, runtime error capture, automatic rollback, one repair attempt with the error message | 4 | 5, 7 | `backend/` (code route, versions), `frontend/` (load, error capture, rollback) | "Give me fireballs" works on attempt 1 or 2 in at least 4 of 5 demo-check runs | todo |
-| 7 | Live patch application: apply every LowLevelOp to the running scene, keeping player position, velocity, score, power-ups; never spawn on the player; fall back to reload | 3–6 | — | `frontend/game.js` | All op types apply mid-run without restart | todo |
+| 5 | Mechanics API + compact reference (one line per function) for the prompt: spawn entities and projectiles, physics bodies, velocity, collisions, input keys, timers, entity properties, tint and sprite | 4 | — | `frontend/mechanics.js` (API section), reference text for the prompt | A hand-written test ability of 10–30 lines (not shipped) works using only the API | doing (Ashwin, branch `t5-6-mechanics-sandbox`): API in `frontend/mechanics.js`, experiment below |
+| 6 | Model-written abilities through the sandbox: code only in mechanics.js, syntax check, runtime error capture, automatic rollback, one repair attempt with the error message | 4 | 5, 7 | `backend/` (code route, versions), `frontend/` (load, error capture, rollback) | "Give me fireballs" works on attempt 1 or 2 in at least 4 of 5 demo-check runs | doing (Ashwin, same branch): sandbox hooks done (try/catch, disable on error, loop guard); not wired into `/api/command` yet |
+| 7 | Live patch application: apply every LowLevelOp to the running scene, keeping player position, velocity, score, power-ups; never spawn on the player; fall back to reload | 3–6 | — | `frontend/game.js` | All op types apply mid-run without restart | in review (PR #11, Owen) |
 | 8 | Cursor context: `/api/command` accepts `cursor: {x, y}` in tiles or null, passed to the model as context | 5 | — | `backend/` | "Put a block here" lands on the cursor tile in the demo check | todo |
 | 9 | Cursor overlay: visible pointer plus highlighted tile, sent with every command | 5 | 8 | `frontend/` | Highlight follows the mouse; requests carry `cursor` | todo |
 | 10 | Shared physics config read by game.js and the checker (gravity, jump velocity, run speed, player size, double-jump strength, coyote time, jump buffer, jump cut, max fall speed) | 6 | — | new shared file, `frontend/game.js` | Changing jump velocity in the config changes the game and the checker | todo |
-| 11 | Playability checker and refusals: tile grid, jump arcs matching the game, reachability from spawn and the player position with double-jump state, specific reasons. Interface below. Test level with gaps 4/5/6/7 and heights 2/3/4 verified by hand | 3, 6 | 10 | `backend/checker.py`, `backend/levels/jump_test.json` | Sample passes; a 10-tile gap fails with a clear reason; checker matches the hand test | todo |
+| 11 | Playability checker and refusals: tile grid, jump arcs matching the game, reachability from spawn and the player position with double-jump state, specific reasons. Interface below. Test level with gaps 4/5/6/7 and heights 2/3/4 verified by hand | 3, 6 | 10 | `backend/checker.py`, `backend/levels/jump_test.json` | Sample passes; a 10-tile gap fails with a clear reason; checker matches the hand test | todo, unclaimed (Owen is the natural owner: pure Python, no Mac needed). Critical for Beat 6 |
 | 12 | Checker reads physics from the current level, so "let me jump higher" immediately changes what's allowed | 6 | 11 | `backend/checker.py` | Beat 6 passes in the demo check | todo |
 | 13 | Player abilities and limits in the prompt: current reach (max gap, max height, with and without double jump) from the current physics, plus the abilities in mechanics.js | 3, 6 | 10 | `backend/prompts.py`, `backend/summary.py` | Prompt numbers change after a physics change | todo |
 | 14 | 🍎 Copilot voice: `/api/speak` with TTSKit (long-running process), refusal vs normal style; immediate spoken acknowledgment ("On it") while the model works | 3–6 | 2 | `backend/`, `frontend/voice.js` | Confirmations and refusals are spoken offline; "On it" plays within 1 s of releasing V | todo |

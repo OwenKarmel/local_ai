@@ -20,7 +20,22 @@
     div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
     el.prepend(div);
   }
-  window.addEventListener("error", (e) => log(`JS error: ${e.message}`, "error"));
+  window.addEventListener("error", (e) => {
+    log(`JS error: ${e.message}`, "error");
+    reportMechanicsError(null, "callback", e.error || e.message);
+  });
+
+  // ---------- sandbox for model-written abilities (mechanics.js) ----------
+  window.MECHANICS_ERRORS = [];
+  function reportMechanicsError(name, phase, err) {
+    const message = String((err && err.message) || err);
+    const ab = name && window.ABILITIES && window.ABILITIES[name];
+    if (ab) ab.disabled = true;
+    const rec = { ability: name, phase, message, stack: err && err.stack ? String(err.stack).split("\n").slice(0, 4).join("\n") : null, t: Date.now() };
+    window.MECHANICS_ERRORS.push(rec);
+    if (name) log(`Ability "${name}" failed in ${phase}: ${message} (disabled)`, "error");
+    window.dispatchEvent(new CustomEvent("mechanics-error", { detail: rec }));
+  }
 
   // ---------- fallback textures (drawn in code; used only when a sprite is missing) ----------
   function makeTextures(scene) {
@@ -104,6 +119,24 @@
       this.banner = this.add.text(480, 200, "", { fontFamily: "monospace", fontSize: "32px", color: "#fff", stroke: "#000", strokeThickness: 5, align: "center" })
         .setOrigin(0.5).setScrollFactor(0).setDepth(10);
       this.updateHud();
+      this.installAbilities();
+    }
+
+    installAbilities() {
+      this.abilityApis = {};
+      for (const [name, ab] of Object.entries(window.ABILITIES || {})) {
+        if (!ab || ab.disabled) continue;
+        const api = (this.abilityApis[name] = window.makeMechanicsApi(this, name, reportMechanicsError));
+        if (typeof ab.setup !== "function") continue;
+        try { ab.setup(this, api); } catch (err) { reportMechanicsError(name, "setup", err); }
+      }
+    }
+
+    runAbilities(dt) {
+      for (const [name, ab] of Object.entries(window.ABILITIES || {})) {
+        if (!ab || ab.disabled || typeof ab.update !== "function") continue;
+        try { ab.update(this, dt, this.abilityApis[name]); } catch (err) { reportMechanicsError(name, "update", err); }
+      }
     }
 
     // Parallax sky: clouds band on top, hills band at the bottom (skipped if the art is missing).
@@ -317,6 +350,7 @@
       S.play(p, !onGround ? "jump" : left !== right ? "run" : "idle");
 
       this.runBehaviors(delta / 1000);
+      this.runAbilities(delta / 1000);
 
       // fell out of the world
       if (p.y > this.worldH + 40) this.die("Fell into a pit");
@@ -336,6 +370,17 @@
     if (scene) scene.scene.restart();
   }
 
+  // Phaser schedules the next frame after running the current one, so an exception thrown from a
+  // model-written callback would stop the game for good. Wrap the frame callback once it exists.
+  function guardLoop() {
+    const raf = game && game.loop && game.loop.raf;
+    if (!raf || !raf.callback) { setTimeout(guardLoop, 50); return; }
+    if (raf.callback.__guarded) return;
+    const inner = raf.callback;
+    raf.callback = function (t) { try { inner(t); } catch (err) { reportMechanicsError(null, "callback", err); } };
+    raf.callback.__guarded = true;
+  }
+
   let game = null;
   async function boot() {
     const [res] = await Promise.all([fetch("/api/level"), S.init()]);
@@ -348,6 +393,7 @@
       physics: { default: "arcade", arcade: { gravity: { y: currentLevel.physics.gravity }, debug: false } },
       scene: [GameScene],
     });
+    guardLoop();
     log(`Loaded level "${currentLevel.name}" (${currentLevel.entities.length} entities)`, "ok");
   }
 

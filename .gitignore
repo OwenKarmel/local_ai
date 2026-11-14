@@ -12,3 +12,5 @@ backend/data/
 *.safetensors
 *.gguf
 *.npz
+# experiment outputs served to the browser harness
+frontend/exp/

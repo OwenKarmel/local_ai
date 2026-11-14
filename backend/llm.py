@@ -21,9 +21,10 @@ def short_name(model: str) -> str:
     return model.rstrip("/").split("/")[-1]
 
 
-def chat(model: str, messages: list[dict], schema: dict | None = None, max_tokens: int = 1024, timeout: float = 120) -> dict:
+def chat(model: str, messages: list[dict], schema: dict | None = None, max_tokens: int = 1024, timeout: float = 120,
+         sampler: dict | None = None) -> dict:
     """Returns {"text", "model", "latency_ms", "usage"}. Raises LLMError if the server is unreachable/errs."""
-    body = {"model": model, "messages": messages, "max_tokens": max_tokens, **SAMPLER}
+    body = {"model": model, "messages": messages, "max_tokens": max_tokens, **(sampler or SAMPLER)}
     if schema is not None:
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": "patch", "schema": schema, "strict": True}}
     t0 = time.perf_counter()
