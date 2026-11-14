@@ -74,7 +74,7 @@ def check(level: dict, player: dict | None) -> dict:
     Physics numbers come from the shared config (A3), never hardcoded."""
 ```
 
-**Parallel work:** tasks 5, 7, 9, 10, 11 and 16 run on any machine (stubs: `STUB_COMMANDS=1`, `STUB_SPEECH=1`). Coordination points: the shared physics config (10 → 11, 12, 13), the checker interface above, the mechanics-code op (5 ↔ 6 ↔ 7), and `cursor` (8 ↔ 9).
+**Parallel work:** tasks 5, 7, 9, 10, 11 and 16 run on any machine (`STUB_SPEECH=1`; commands need a model server, e.g. Ashwin's over the local network). Coordination points: the shared physics config (10 → 11, 12, 13), the checker interface above, the mechanics-code op (5 ↔ 6 ↔ 7), and `cursor` (8 ↔ 9).
 
 
 ## Later
@@ -125,7 +125,7 @@ Found on main, 11-14 16:40:
 - `backend/prompts.py`: the worked example "make this harder and give me fireballs", which matches two demo beats, and the `set_ability` fireball line in the ops list.
 - `backend/prompts.py`: the rule "Harder: wider gaps (+1)… Easier: narrower gaps…", which maps one command to fixed levers. To be replaced by generic context (player limits, task 13).
 - plan.md: the deterministic ladder (old A10) and the `route: "ladder"` contract value. Removed in this PR.
-- Allowed and kept: `backend/stub_commands.py` keyword responses, which only run under `STUB_COMMANDS=1` (frontend development without a model). The intent ops (widen_gap, add_enemy, …) and the "ahead of the player" rule are building blocks used by many commands.
+- Keyword stubs (`backend/stub_commands.py`, `STUB_COMMANDS=1`) removed 11-14. The intent ops (widen_gap, add_enemy, …) and the "ahead of the player" rule are building blocks used by many commands.
 
 ## Interface contracts (source of truth)
 Exact field names and types. A change needs a decisions-log entry and a heads-up to the other person.
@@ -186,20 +186,7 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 
 ### Stubs
 Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
-- `/api/command` is real (needs the model server). **With `STUB_COMMANDS=1` it returns canned responses instead** (`backend/stub_commands.py`), by keyword in `text`, checked in this order:
-
-| Text contains | Result |
-|---|---|
-| "impossible" or "10 tiles" | `refused`, with reason and spoken message |
-| "gravity" | `applied`, fast route, `set_physics` gravity lowered by 300 (floor 400) |
-| "fireball" | `applied`, fast route, `set_ability` fireball enabled |
-| "remove" | `applied`, `remove_entity` of the first enemy (`refused` if none left) |
-| "faster" | `applied`, `update_entity` on every enemy (`props.speed` +40) |
-| "gap" | `applied`, `update_entity` on `ground2` (first gap one tile wider) |
-| "enemy" | `applied`, `add_entity` enemy 3 tiles ahead of `player`, or at x 8, then 19, 26, 36 without a player |
-| anything else | `error` |
-
-  The stub really applies its ops to the in-memory level, so `level`, `version`, `GET /api/level` and undo stay consistent. It sleeps 0.6 s (fast) or 2 s (level) so "thinking" UI can be tested. The real command takes 9 to 25 s on the 4B.
+- `/api/command` is always real: it needs the model server. If it's unreachable: `status: "error"` ("Model server not reachable"). The keyword stub was removed.
 - `/api/transcribe` returns `"lower the gravity"`, `speaker: null`.
 - `/api/speak` returns a 0.25 s beep wav; pitch differs per style.
 
@@ -253,6 +240,7 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
 | 11-14 15:20 | **Contract: `route` gains the value `"ladder"`** in the `/api/command` response | Ladder answers aren't fast-route or level-route model calls; the HUD and eval should show them separately. The frontend should treat unknown route values as display-only. The backend type changes when A10 lands |
 | 11-14 16:40 | **One goal: the demo video script, end to end, on the demo Mac with Wi-Fi off.** Board replaced by one numbered list in beat order, no owners; claim by number | Focus. Everything not serving a beat moves to "Later" |
 | 11-14 16:40 | **Core principle: nothing about what a command does is hardcoded.** Every command goes to Bonsai; our code provides building blocks, context, guardrails, measurement, and an immediate spoken acknowledgment | Judges may try their own commands at the finals; the system must stay general |
+| 11-14 17:40 | **Keyword stub removed** (`STUB_COMMANDS`, `backend/stub_commands.py`). `/api/command` always goes to Bonsai | Canned keyword answers masked what the model actually does and drifted from the real pipeline (e.g. "make it shoot slower" errored in stub mode only) |
 | 11-14 16:40 | Deterministic ladder (old A10) removed; `"ladder"` removed from `route` | Prebuilt difficulty steps are hardcoded behavior |
 | 11-14 16:40 | Pre-written fireball ability to be removed (task 4); abilities are model-written in mechanics.js through the sandbox (tasks 5–6) | Same principle. `set_ability` stays as a generic settings op |
 | 11-14 16:40 | `/api/command` request gains `cursor: {x, y} \| null`; response gains `stats` (only measured numbers, null otherwise) | Beat 5 needs the cursor tile; Beat 8 and the HUD need honest stats |

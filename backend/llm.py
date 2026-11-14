@@ -28,6 +28,8 @@ def chat(model: str, messages: list[dict], schema: dict | None = None, max_token
          sampler: dict | None = None) -> dict:
     """Returns {"text", "model", "latency_ms", "usage"}. Raises LLMError if the server is unreachable/errs."""
     body = {"model": model, "messages": messages, "max_tokens": max_tokens, **(sampler or SAMPLER)}
+    if config.NO_THINKING:
+        body["chat_template_kwargs"] = {"enable_thinking": False}
     if schema is not None:
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": "patch", "schema": schema, "strict": True}}
     t0 = time.perf_counter()
@@ -41,5 +43,5 @@ def chat(model: str, messages: list[dict], schema: dict | None = None, max_token
     d = r.json()
     text = d["choices"][0]["message"].get("content") or ""
     usage = d.get("usage") or {}
-    log.info("model=%s latency_ms=%d in=%s out=%s", short_name(model), latency_ms, usage.get("prompt_tokens"), usage.get("completion_tokens"))
+    log.info("model=%s think=%s latency_ms=%d in=%s out=%s", short_name(model), "off" if config.NO_THINKING else "default", latency_ms, usage.get("prompt_tokens"), usage.get("completion_tokens"))
     return {"text": text, "model": short_name(model), "latency_ms": latency_ms, "usage": usage}
