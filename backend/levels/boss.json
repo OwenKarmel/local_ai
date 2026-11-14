@@ -1,0 +1,29 @@
+{
+  "name": "Boss Arena",
+  "tile_size": 32,
+  "width": 40,
+  "height": 15,
+  "physics": { "gravity": 1200, "jump_velocity": 560, "run_speed": 200 },
+  "spawn": { "x": 2, "y": 11 },
+  "entities": [
+    { "id": "ground1", "type": "platform", "x": 0, "y": 13, "w": 8, "h": 2 },
+    { "id": "ground2", "type": "platform", "x": 10, "y": 13, "w": 30, "h": 2 },
+
+    { "id": "plat1", "type": "platform", "x": 14, "y": 10, "w": 3, "h": 1 },
+    { "id": "plat2", "type": "platform", "x": 22, "y": 9, "w": 3, "h": 1 },
+    { "id": "plat3", "type": "platform", "x": 30, "y": 10, "w": 3, "h": 1 },
+
+    { "id": "lava1", "type": "lava", "x": 8, "y": 14, "w": 2, "h": 1 },
+
+    { "id": "boss1", "type": "enemy", "x": 27, "y": 11, "w": 2, "h": 2, "behaviors": ["boss"],
+      "props": { "hp": 6, "phase2_at": 3, "speed": 70, "phase2_speed": 140, "jump_every": 2.5, "shoot_every": 1.8, "shot_speed": 260 } },
+
+    { "id": "coin1", "type": "coin", "x": 15, "y": 9 },
+    { "id": "coin2", "type": "coin", "x": 23, "y": 8 },
+    { "id": "coin3", "type": "coin", "x": 31, "y": 9 },
+
+    { "id": "dj1", "type": "double_jump", "x": 5, "y": 12 },
+
+    { "id": "goal", "type": "goal", "x": 38, "y": 11, "w": 1, "h": 2, "props": { "locked_by": "boss1" } }
+  ]
+}

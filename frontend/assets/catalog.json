@@ -1,5 +1,5 @@
 {
- "source": "Kenney New Platformer Pack 1.1 (kenney.nl), CC0. See sprites/License.txt. ball_white.png, effect_*.png are derived/generated.",
+ "source": "Kenney New Platformer Pack 1.1 (kenney.nl), CC0. See sprites/License.txt. ball_white.png, effect_*.png, character_big_*.png are derived/generated.",
  "defaults": {
   "player": "player_green",
   "platform": "platform_grass",
@@ -8,6 +8,8 @@
   "enemy": "enemy_slime_purple",
   "coin": "coin_gold",
   "double_jump": "powerup_star",
+  "grow": "powerup_mushroom_red",
+  "player_big": "player_big_green",
   "goal": "flag_green",
   "projectile": "fireball_orange"
  },
@@ -197,6 +199,44 @@
     "hit": {
      "frames": [
       "character_beige_hit.png"
+     ],
+     "fps": 1
+    }
+   }
+  },
+  {
+   "name": "player_big_green",
+   "type": "player_big",
+   "file": "character_big_green_idle.png",
+   "description": "tall green alien astronaut with antenna, star badge and belt: the grown player (grow power-up)",
+   "size": [
+    128,
+    168
+   ],
+   "scale": 0.375,
+   "animations": {
+    "idle": {
+     "frames": [
+      "character_big_green_idle.png"
+     ],
+     "fps": 1
+    },
+    "run": {
+     "frames": [
+      "character_big_green_walk_a.png",
+      "character_big_green_walk_b.png"
+     ],
+     "fps": 8
+    },
+    "jump": {
+     "frames": [
+      "character_big_green_jump.png"
+     ],
+     "fps": 1
+    },
+    "hit": {
+     "frames": [
+      "character_big_green_hit.png"
      ],
      "fps": 1
     }
@@ -744,7 +784,7 @@
    "name": "powerup_mushroom_red",
    "type": "powerup",
    "file": "mushroom_red.png",
-   "description": "red mushroom",
+   "description": "red mushroom (default grow power-up)",
    "size": [
     64,
     64

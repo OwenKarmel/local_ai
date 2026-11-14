@@ -5,6 +5,8 @@ player_pink: pink alien astronaut, the player character
 player_yellow: yellow alien astronaut, the player character
 player_purple: purple alien astronaut, the player character
 player_beige: beige alien astronaut, the player character
+[player_big]
+player_big_green: tall green alien astronaut with antenna, star badge and belt: the grown player (grow power-up)
 [tile]
 platform_grass: platform and ground tiles: green grass on brown dirt
 platform_dirt: platform and ground tiles: brown dirt
@@ -41,7 +43,7 @@ gem_yellow: yellow gem (collectible, counts as a coin)
 powerup_star: gold star (default double-jump power-up)
 powerup_heart: red heart
 powerup_spring: metal spring
-powerup_mushroom_red: red mushroom
+powerup_mushroom_red: red mushroom (default grow power-up)
 powerup_mushroom_brown: brown mushroom
 [goal]
 flag_green: green goal flag on a pole

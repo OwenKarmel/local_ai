@@ -1,15 +1,23 @@
 // game.js — Phaser runtime. Builds a level from JSON and runs it.
-// Public API (window.Sketch2Game): loadLevel(levelJson), applyPatch(ops, levelJson, label), log(msg, kind), setAppearance(id, {sprite, tint}),
-//   setPlayerLook({sprite, tint}), debugProjectile(sprite, tint), .level, .scene
+// Public API (window.Sketch2Game): loadLevel(levelJson), applyPatch(ops, levelJson, label, stage), goToStage(i), log(msg, kind),
+//   setAppearance(id, {sprite, tint}), setPlayerLook({sprite, tint}), debugProjectile(sprite, tint), .level, .scene, .stage
+// Visual-only looks (entity.look, level.player_look, level.scene, level.reactions) are drawn by looks.js (window.LOOKS).
+// Levels are played as stages in order (backend /api/stage); reaching an unlocked goal moves on to the next stage.
 // Sprites and effects come from sprites.js (window.SPRITES); see assets/catalog.json.
 (function () {
   const TILE = 32;
   const COYOTE_MS = 100;     // jump grace after leaving a ledge
   const JUMP_BUFFER_MS = 100; // jump pressed slightly before landing still counts
   const PLAYER_W = 24, PLAYER_H = 30, ENEMY_W = 28, ENEMY_H = 24; // physics bodies (world px); art is skinned around them
+  // "grow" power-up: the player turns into the tall character (catalog default "player_big": tools/big_player.py).
+  // Body 28x48: still fits through a 2-tile opening.
+  const BIG_W = 28, BIG_H = 48; // grown player's physics body (world px)
+  const HURT_GRACE_MS = 1500; // after a big player is hit and shrinks: can't be hurt again for this long
   const S = window.SPRITES;
+  const LK = window.LOOKS;
   let currentLevel = null;
   let playerLook = {}; // { sprite?, tint? }; survives restarts
+  let stage = { index: 0, count: 1, names: [] }; // which level of the sequence is loaded (GET /api/stage)
 
   // ---------- side panel log ----------
   function log(msg, kind = "info") {
@@ -28,12 +36,14 @@
     const g = scene.make.graphics({ add: false });
     const tex = (key, w, h, draw) => { g.clear(); draw(g); g.generateTexture(key, w, h); };
     tex("player", PLAYER_W, PLAYER_H, (g) => g.fillStyle(0xe74c3c).fillRect(0, 0, PLAYER_W, PLAYER_H));
+    tex("player_big", BIG_W, BIG_H, (g) => g.fillStyle(0xf39c12).fillRect(0, 0, BIG_W, BIG_H));
     tex("enemy", ENEMY_W, ENEMY_H, (g) => g.fillStyle(0x8e5a2b).fillRect(0, 0, ENEMY_W, ENEMY_H));
     tex("platform", TILE, TILE, (g) => { g.fillStyle(0x6b4a2b).fillRect(0, 0, TILE, TILE); g.lineStyle(2, 0x553a20).strokeRect(1, 1, TILE - 2, TILE - 2); });
     tex("spikes", TILE, TILE, (g) => g.fillStyle(0xbdc3c7).fillRect(0, TILE / 2, TILE, TILE / 2));
     tex("lava", TILE, TILE, (g) => g.fillStyle(0xe67e22).fillRect(0, 0, TILE, TILE));
     tex("coin", 16, 16, (g) => g.fillStyle(0xf1c40f).fillRect(0, 0, 16, 16));
     tex("double_jump", 22, 22, (g) => g.fillStyle(0x3498db).fillRect(0, 0, 22, 22));
+    tex("grow", 22, 22, (g) => g.fillStyle(0xe03c3c).fillRect(0, 0, 22, 22));
     tex("goal", TILE, TILE * 2, (g) => g.fillStyle(0x9b59b6).fillRect(0, 0, TILE, TILE * 2));
     tex("fx_dot", 8, 8, (g) => g.fillStyle(0xffffff).fillCircle(4, 4, 4));
     tex("fx_ball", 14, 14, (g) => g.fillStyle(0xffffff).fillCircle(7, 7, 7));
@@ -54,6 +64,7 @@
       this.coins = 0;
       this.totalCoins = L.entities.filter((e) => e.type === "coin").length;
       this.hasDoubleJump = false;
+      this.isBig = false;   // "grow" power-up: bigger player that survives one hit
       this.airJumpsUsed = 0;
       this.lastGroundTime = -9999;
       this.jumpedSinceGround = false;
@@ -70,11 +81,17 @@
       this.cameras.main.setBounds(0, 0, W, H).setBackgroundColor("#cfefff");
       this.makeBackground();
       S.fx.init(this);
+      LK.init(this);
+      this.wasOnGround = true;
+      this.stepDist = 0;
 
       this.platforms = this.physics.add.staticGroup();
       this.hazards = this.physics.add.staticGroup();
       this.items = this.physics.add.staticGroup();
       this.enemies = this.physics.add.group();
+      this.enemyShots = this.physics.add.group({ allowGravity: false }); // see spawnEnemyShot
+      this.hpBars = this.add.graphics().setDepth(8);
+      this.lockHintUntil = 0;
       this.behaving = []; // sprites with behaviors
       this.byId = {};     // entity id -> game object
 
@@ -89,9 +106,16 @@
 
       this.physics.add.collider(this.player, this.platforms);
       this.physics.add.collider(this.enemies, this.platforms);
-      this.physics.add.overlap(this.player, this.hazards, () => { if (this.time.now >= this.graceUntil) this.die("Ouch! Hazard"); });
+      this.physics.add.overlap(this.player, this.hazards, () => this.hurt("Ouch! Hazard"));
       this.physics.add.overlap(this.player, this.enemies, (p, en) => this.hitEnemy(p, en));
       this.physics.add.overlap(this.player, this.items, (p, it) => this.collect(it));
+      this.physics.add.overlap(this.player, this.enemyShots, (p, shot) => {
+        if (this.dead || this.time.now < this.graceUntil) return;
+        S.fx.burst(shot.x, shot.y, shot.trailColor ?? 0xffa030, 6);
+        shot.destroy();
+        this.hurt("Hit by a projectile");
+      });
+      this.physics.add.overlap(this.enemyShots, this.platforms, (shot) => { S.fx.burst(shot.x, shot.y, shot.trailColor ?? 0xffa030, 6); shot.destroy(); });
 
       this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
 
@@ -106,6 +130,7 @@
         .setOrigin(0.5).setScrollFactor(0).setDepth(10);
       this.toast = this.add.text(480, 44, "", { fontFamily: "monospace", fontSize: "18px", color: "#fff", stroke: "#3a2a6a", strokeThickness: 4 })
         .setOrigin(0.5).setScrollFactor(0).setDepth(10).setAlpha(0);
+      LK.applyScene(this, L.scene);
       this.updateHud();
     }
 
@@ -116,7 +141,7 @@
         const e = S.catalog[name];
         if (!e || !this.textures.exists(S.key(e.file))) return;
         const ts = this.add.tileSprite(0, y, this.scale.width, e.size[1], S.key(e.file)).setOrigin(0, 0).setScrollFactor(0).setDepth(-10);
-        this.bg.push({ ts, factor });
+        this.bg.push({ ts, factor, isSky: true }); // all three bands have an opaque sky: hidden under a custom sky
       };
       const h = this.scale.height;
       band("bg_sky", 0, 0);
@@ -140,12 +165,16 @@
           obj = this.add.zone(cx, top + h * 0.65, w - 6, h * 0.6);
           this.hazards.add(obj);
           break;
-        case "enemy":
-          obj = this.enemies.create(cx, top + h - ENEMY_H / 2, "enemy").setDepth(2);
+        case "enemy": {
+          const { bh } = this.enemyBody(e);
+          obj = this.enemies.create(cx, top + h - bh / 2, "enemy").setDepth(2);
           obj.setCollideWorldBounds(true);
+          obj.damage = 0; // hits taken; it is defeated when this reaches props.hp (default 1)
           break;
+        }
         case "coin":
         case "double_jump":
+        case "grow":
         case "goal":
           obj = this.items.create(cx, cy, e.type).setDepth(1);
           break;
@@ -168,17 +197,22 @@
       const w = (e.w || 1) * TILE, h = (e.h || 1) * TILE;
       const left = e.x * TILE, top = e.y * TILE, cx = left + w / 2, cy = top + h / 2;
       const entry = S.resolve(this, t, e.sprite);
+      let kind = "static";
       if (t === "platform" || t === "spikes" || t === "lava") {
+        kind = "area";
         (obj.visuals || []).forEach((v) => v.destroy());
         obj.visuals = S.buildArea(this, entry, t, left, top, e.w || 1, e.h || 1);
       } else if (t === "enemy") {
-        S.skinDynamic(this, obj, entry, "enemy", ENEMY_W, ENEMY_H);
+        kind = "dynamic";
+        const { bw, bh, mul, mulY } = this.enemyBody(e);
+        if (obj.bodyH && obj.body) obj.y -= (bh - obj.bodyH) / 2; // size changed live: keep its feet on the ground
+        S.skinDynamic(this, obj, entry, "enemy", bw, bh, mul, mulY);
         S.play(obj, "walk");
       } else if (t === "coin") {
         S.skinStatic(this, obj, entry, "coin", cx, cy, cx, cy, 16, 16);
         S.play(obj, "spin");
-      } else if (t === "double_jump") {
-        S.skinStatic(this, obj, entry, "double_jump", cx, cy, cx, cy, 22, 22);
+      } else if (t === "double_jump" || t === "grow") {
+        S.skinStatic(this, obj, entry, t, cx, cy, cx, cy, 22, 22);
         if (!obj.idleFx && obj.active) obj.idleFx = S.fx.idle(cx, cy);
       } else if (t === "goal") {
         // flag art is 2 tiles tall with the pole on its left edge; hitbox stays the full entity rect
@@ -187,13 +221,69 @@
         S.skinStatic(this, obj, entry, "goal", artX, artY, cx, cy, w, h);
         S.play(obj, "wave");
       }
-      S.applyTint(obj, entry, e.tint);
+      S.applyTint(obj, entry, e.tint, e.look);
+      LK.applyObject(this, obj, e.look, kind);
     }
 
+    // Enemy physics body in world px: 28x24 per tile of w/h, so a 2x2 enemy is twice as big. Art scales with it,
+    // and so does look.scale / scale_x / scale_y (a bigger-looking enemy is also bigger to hit).
+    enemyBody(e) {
+      const w = e.w || 1, h = e.h || 1, lk = e.look || {};
+      const sx = (lk.scale || 1) * (lk.scale_x || 1), sy = (lk.scale || 1) * (lk.scale_y || 1), m = Math.min(w, h);
+      return { bw: ENEMY_W * w * sx, bh: ENEMY_H * h * sy, mul: m * sx, mulY: m * sy };
+    }
+
+    // Player look: level.player_look (from commands), overridden by Sketch2Game.setPlayerLook (dev tool).
+    playerLookNow() {
+      const out = { ...((this.level && this.level.player_look) || {}) };
+      for (const [k, v] of Object.entries(playerLook)) if (v !== undefined) out[k] = v;
+      return out;
+    }
+
+    // Small: playerLook.sprite (default "player"), body 24x30. Big: playerLook.bigSprite (default "player_big"), body 28x48.
+    // Look size (scale/scale_x/scale_y) only changes the art: the body stays the shared-config size.
     skinPlayer() {
-      const entry = S.resolve(this, "player", playerLook.sprite);
-      S.skinDynamic(this, this.player, entry, "player", PLAYER_W, PLAYER_H);
-      S.applyTint(this.player, entry, playerLook.tint);
+      const p = this.player, big = this.isBig, look = this.playerLookNow();
+      // A custom sprite (e.g. "look like a frog") is used while grown too, unless a big sprite was chosen.
+      const bigEntry = big ? S.resolve(this, "player_big", look.bigSprite || null) : null;
+      const custom = look.sprite ? S.resolve(this, "player", look.sprite) : null;
+      const entry = (big && !look.sprite ? bigEntry : null) || custom || S.resolve(this, "player", null);
+      const mx = (look.scale || 1) * (look.scale_x || 1), my = (look.scale || 1) * (look.scale_y || 1);
+      if (big && entry !== bigEntry) { // no tall art: stretch the normal art to the big body
+        S.skinDynamic(this, p, entry, "player", BIG_W, BIG_H, mx * BIG_W / PLAYER_W, my * BIG_H / PLAYER_H);
+      } else {
+        S.skinDynamic(this, p, entry, big ? "player_big" : "player", big ? BIG_W : PLAYER_W, big ? BIG_H : PLAYER_H, mx, my);
+      }
+      S.applyTint(p, entry, look.tint);
+      LK.applyObject(this, p, look, "dynamic");
+      S.play(p, "idle");
+    }
+
+    // Grow or shrink the player (look + art + hitbox), keeping the feet where they are. Usable from mechanics.js.
+    setPlayerBig(on) {
+      on = !!on;
+      if (on === this.isBig) return;
+      const p = this.player;
+      p.y -= ((on ? 1 : -1) * (BIG_H - PLAYER_H)) / 2; // sprite.x/y is the body center: lift so the feet stay put
+      this.isBig = on;
+      this.skinPlayer();
+      S.fx.sparkle(p.x, p.y, on ? 0xffe08a : 0xffffff, 12);
+      this.ring(p.x, p.y, on ? 0xffb3b3 : 0xffffff, 8);
+      this.updateHud();
+    }
+
+    // Hazard or enemy contact. A big player shrinks back and gets a short grace period instead of dying.
+    hurt(reason) {
+      if (this.dead || this.won || this.time.now < this.graceUntil) return;
+      LK.react(this, "hurt", this.player);
+      if (!this.isBig) { this.die(reason); return; }
+      this.setPlayerBig(false);
+      this.graceUntil = this.time.now + HURT_GRACE_MS;
+      const p = this.player;
+      S.fx.burst(p.x, p.y, 0xffb3b3, 10);
+      this.tweens.add({ targets: p, alpha: 0.3, duration: 100, yoyo: true, repeat: Math.floor(HURT_GRACE_MS / 200) - 1,
+                        onComplete: () => p.setAlpha(1) });
+      log("Hit while big: shrank back", "info");
     }
 
     // Live look change for one entity (used by live patching for update_entity with sprite/tint).
@@ -211,6 +301,7 @@
     applyOps(ops, next, label) {
       const findDef = (id) => next.entities.find((e) => e.id === id);
       let globalChange = false;
+      const looks = new Set();
       for (const op of ops) {
         switch (op.op) {
           case "remove_entity": this.liveRemove(op.id, true); break;
@@ -222,6 +313,7 @@
           }
           case "update_entity": this.liveUpdate(op.id, findDef(op.id)); break;
           case "set_physics": case "set_ability": globalChange = true; break;
+          case "set_player_look": case "set_scene": case "set_reactions": looks.add(op.op); break;
           default: log(`Unknown patch op '${op.op}'`, "error");
         }
       }
@@ -231,6 +323,8 @@
         const d = findDef(id);
         if (d) { this.byId[id].def = d; this.byId[id].props = d.props || {}; }
       }
+      if (looks.has("set_player_look")) { this.skinPlayer(); this.ring(this.player.x, this.player.y, 0xfff2a0, 8); }
+      if (looks.has("set_scene")) LK.applyScene(this, next.scene);
       this.graceUntil = this.time.now + 700; // don't let a change kill the player on the spot
       if (globalChange) this.globalPulse();
       if (label) this.showToast(label);
@@ -275,9 +369,11 @@
       if (!obj.active && obj.type !== "Zone") { obj.def = def; obj.props = def.props || {}; return; } // collected/stomped: stays gone
       const old = obj.def;
       const moved = ["type", "x", "y", "w", "h"].some((k) => (old[k] ?? 1) !== (def[k] ?? 1));
-      if (moved) { // geometry changed: crossfade old art out, new entity in
+      if (moved) { // geometry changed: crossfade old art out, new entity in (enemies keep the hits they took)
+        const damage = obj.damage;
         this.liveRemove(id, true);
         this.liveAdd(def);
+        if (damage && this.byId[id]) this.byId[id].damage = damage;
         return;
       }
       obj.def = def;
@@ -286,8 +382,9 @@
       const behaves = def.behaviors && def.behaviors.length;
       if (behaves && !this.behaving.includes(obj)) this.behaving.push(obj);
       if (!behaves) this.behaving = this.behaving.filter((o) => o !== obj);
-      if (old.sprite !== def.sprite || old.tint !== def.tint) this.skinEntity(obj);
+      if (old.sprite !== def.sprite || old.tint !== def.tint || JSON.stringify(old.look) !== JSON.stringify(def.look)) this.skinEntity(obj);
       this.pulse(obj);
+      if (def.type === "enemy" && this.enemyHp(obj) <= 0) this.defeatEnemy(obj); // hp lowered below the hits taken
     }
 
     // Contract: never spawn anything on top of the player; slide it away tile by tile (x only).
@@ -358,26 +455,109 @@
     showToast(text) {
       const t = this.toast;
       this.tweens.killTweensOf(t);
-      t.setText("★ " + text).setAlpha(0).setY(30);
-      this.tweens.add({ targets: t, alpha: 1, y: 44, duration: 220, ease: "Back.easeOut" });
+      t.setText("★ " + text).setAlpha(0).setY(LK.uiY(this, 30));
+      this.tweens.add({ targets: t, alpha: 1, y: LK.uiY(this, 44), duration: 220, ease: "Back.easeOut" });
       this.tweens.add({ targets: t, alpha: 0, duration: 400, delay: 2000 });
     }
 
     hitEnemy(p, en) {
       if (this.dead || !en.active) return;
+      if (this.time.now < (en.hurtUntil || 0)) return; // just got hit: no second stomp, no contact damage
       const stomp = p.body.velocity.y > 0 && p.body.bottom <= en.body.top + 14;
       if (stomp) {
-        S.fx.burst(en.x, en.y, en.tintColor ?? 0xe9dcff, 12);
-        en.disableBody(true, true);
+        LK.react(this, "stomp", en);
         p.setVelocityY(-this.level.physics.jump_velocity * 0.6);
-      } else if (this.time.now >= this.graceUntil) {
-        this.die("Got hit by an enemy");
+        this.damageEnemy(en, 1);
+      } else {
+        this.hurt("Got hit by an enemy");
+      }
+    }
+
+    // ----- building blocks for behaviors in mechanics.js (and model-written abilities) -----
+    // Hits an enemy can still take: props.hp (default 1) minus hits taken. Changing props.hp live keeps the damage.
+    enemyHp(en) { return Math.max(0, (Number(en.props && en.props.hp) || 1) - (en.damage || 0)); }
+
+    // Deal n hits. Brief invulnerability after a hit that doesn't defeat it. Returns false if it couldn't be hit.
+    damageEnemy(en, n = 1) {
+      if (!en || !en.active || this.time.now < (en.hurtUntil || 0)) return false;
+      en.damage = (en.damage || 0) + n;
+      if (this.enemyHp(en) <= 0) { this.defeatEnemy(en); return true; }
+      en.hurtUntil = this.time.now + 600;
+      S.fx.burst(en.x, en.y, 0xffffff, 10);
+      this.tweens.add({ targets: en, alpha: 0.3, duration: 75, yoyo: true, repeat: 3, onComplete: () => en.setAlpha(1) });
+      return true;
+    }
+
+    defeatEnemy(en) {
+      if (!en.active) return;
+      LK.react(this, "enemy_defeated", en);
+      const big = (Number(en.props && en.props.hp) || 1) > 1;
+      S.fx.burst(en.x, en.y, en.tintColor ?? 0xe9dcff, big ? 36 : 12);
+      if (big) {
+        this.cameras.main.shake(350, 0.012);
+        this.ring(en.x, en.y, 0xffffff, 16);
+        S.fx.sparkle(en.x, en.y, 0xfff2a0, 20);
+        this.showToast(`${en.def.id} defeated!`);
+        log(`${en.def.id} defeated`, "ok");
+      }
+      en.disableBody(true, true);
+    }
+
+    // A projectile that hurts the player on touch and pops on platforms. look = {sprite, tint, life_ms}.
+    spawnEnemyShot(x, y, vx, vy = 0, look = {}) {
+      const shot = S.spawnProjectile(this, x, y, vx < 0 ? -1 : 1, { sprite: "fireball_red", ...look, life_ms: look.life_ms || 4000 });
+      this.enemyShots.add(shot);
+      shot.body.setAllowGravity(false);
+      shot.setVelocity(vx, vy);
+      return shot;
+    }
+
+    // True if world point (px, py) is inside a platform of the current level.
+    solidAt(px, py) {
+      const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
+      return this.level.entities.some((e) => e.type === "platform" && tx >= e.x && tx < e.x + (e.w || 1) && ty >= e.y && ty < e.y + (e.h || 1));
+    }
+
+    // A goal with props.locked_by = "<id>" can't be reached while that object is still alive.
+    isLocked(goal) {
+      const lk = goal.def.props && goal.def.props.locked_by;
+      const by = lk && this.byId[lk];
+      return !!(by && by.active);
+    }
+
+    updateLocks() {
+      for (const id in this.byId) {
+        const g = this.byId[id];
+        if (g.def.type !== "goal" || !g.active) continue;
+        const locked = this.isLocked(g);
+        if (locked === g.wasLocked) continue;
+        const first = g.wasLocked === undefined;
+        g.wasLocked = locked;
+        g.setAlpha(locked ? 0.35 : 1);
+        if (!locked && !first) {
+          this.ring(g.x, g.y, 0xfff2a0, 12);
+          S.fx.sparkle(g.x, g.y, 0xfff2a0, 20);
+          this.showToast("The flag is open!");
+        }
+      }
+    }
+
+    drawHpBars() {
+      const g = this.hpBars;
+      g.clear();
+      for (const en of this.enemies.getChildren()) {
+        const max = Number(en.props && en.props.hp) || 1;
+        if (!en.active || max <= 1) continue;
+        const w = Math.max(40, en.body.width), x = en.body.center.x - w / 2, y = en.body.top - 16;
+        g.fillStyle(0x000000, 0.6).fillRect(x - 2, y - 2, w + 4, 10);
+        g.fillStyle(0xff4d4d).fillRect(x, y, (w * this.enemyHp(en)) / max, 6);
       }
     }
 
     collect(it) {
       if (this.dead || this.won || !it.active) return;
       const t = it.def.type;
+      if (t !== "goal") LK.react(this, t === "coin" ? "coin" : "powerup", it, it.x, it.y);
       if (t === "coin") {
         this.coins++;
         S.fx.sparkle(it.x, it.y, it.tintColor ?? 0xfff2a0);
@@ -389,18 +569,35 @@
         S.fx.flash(this);
         it.disableBody(true, true);
         log("Double jump unlocked", "ok");
-      } else if (t === "goal") { this.win(); }
+      } else if (t === "grow") {
+        if (it.idleFx) { it.idleFx.destroy(); it.idleFx = null; }
+        S.fx.sparkle(it.x, it.y, it.tintColor ?? 0xffb3b3, 14);
+        it.disableBody(true, true);
+        this.setPlayerBig(true);
+        log("Grew bigger: survives one hit", "ok");
+      } else if (t === "goal") {
+        if (this.isLocked(it)) {
+          if (this.time.now > this.lockHintUntil) {
+            this.showToast(`Locked: defeat ${it.def.props.locked_by} first`);
+            this.lockHintUntil = this.time.now + 2500;
+          }
+          return;
+        }
+        this.win();
+      }
       this.updateHud();
     }
 
     updateHud() {
-      this.hud.setText(`Coins ${this.coins}/${this.totalCoins}${this.hasDoubleJump ? "   ⬆⬆ double jump" : ""}`);
+      const lvl = stage.count > 1 ? `${this.level.name} (${stage.index + 1}/${stage.count})   ` : "";
+      this.hud.setText(`${lvl}Coins ${this.coins}/${this.totalCoins}${this.hasDoubleJump ? "   ⬆⬆ double jump" : ""}${this.isBig ? "   ▲ big" : ""}`);
     }
 
     die(reason) {
       if (this.dead || this.won) return;
       this.dead = true;
       const p = this.player;
+      LK.react(this, "die", p);
       S.play(p, "hit");
       S.fx.burst(p.x, Math.min(p.y, this.worldH - 8), p.tintColor ?? 0xff6b5e, 18);
       this.tweens.add({ targets: p, alpha: 0, duration: 350 });
@@ -412,10 +609,17 @@
     win() {
       if (this.won) return;
       this.won = true;
+      LK.react(this, "win", this.player);
       this.physics.pause();
       S.fx.sparkle(this.player.x, this.player.y - 10, 0xfff2a0, 20);
-      this.banner.setText(`You win!\nCoins ${this.coins}/${this.totalCoins}\nPress R to play again`);
-      log("Level complete", "ok");
+      log(`Level complete: ${this.level.name}`, "ok");
+      const next = stage.index + 1;
+      if (next < stage.count) {
+        this.banner.setText(`Level complete!\nCoins ${this.coins}/${this.totalCoins}\nNext: ${stage.names[next] || "level " + (next + 1)}`);
+        this.time.delayedCall(2200, () => goToStage(next)); // cancelled if the player restarts with R
+      } else {
+        this.banner.setText(`You win!\nCoins ${this.coins}/${this.totalCoins}\nPress R to play again`);
+      }
     }
 
     runBehaviors(dt) {
@@ -447,6 +651,12 @@
 
       const p = this.player, phys = this.level.physics;
       const onGround = p.body.blocked.down;
+      if (onGround && !this.wasOnGround) LK.react(this, "land", p, p.x, p.body.bottom);
+      this.wasOnGround = onGround;
+      if (onGround && p.body.velocity.x !== 0) {
+        this.stepDist += Math.abs(p.body.velocity.x) * delta / 1000;
+        if (this.stepDist > 36) { this.stepDist = 0; LK.react(this, "step", p, p.x, p.body.bottom); }
+      }
       if (onGround) { this.lastGroundTime = time; this.jumpedSinceGround = false; this.airJumpsUsed = 0; }
 
       // run
@@ -463,12 +673,14 @@
           p.setVelocityY(-phys.jump_velocity);
           this.jumpedSinceGround = true;
           this.jumpBufferUntil = 0;
+          LK.react(this, "jump", p, p.x, p.body.bottom);
         } else if (jumpDown && this.hasDoubleJump && this.airJumpsUsed < 1 && !onGround) {
           p.setVelocityY(-phys.jump_velocity * 0.9);
           this.airJumpsUsed++;
           this.jumpedSinceGround = true;
           this.jumpBufferUntil = 0;
           S.fx.sparkle(p.x, p.y + PLAYER_H / 2, 0xffffff, 5);
+          LK.react(this, "jump", p, p.x, p.body.bottom);
         }
       }
       // variable jump height: release early for a short hop
@@ -477,6 +689,9 @@
       S.play(p, !onGround ? "jump" : left !== right ? "run" : "idle");
 
       this.runBehaviors(delta / 1000);
+      LK.update(this, time);
+      this.updateLocks();
+      this.drawHpBars();
 
       // fell out of the world
       if (p.y > this.worldH + 40) this.die("Fell into a pit");
@@ -498,7 +713,12 @@
 
   // Apply a /api/command patch to the running game without restarting. `level` is the full level after the
   // change (response.level). Falls back to a full reload if live apply throws. Returns true if applied live.
-  function applyPatch(ops, level, label) {
+  // `stageIndex` (response.stage) guards against applying a change made to a level that is no longer loaded.
+  function applyPatch(ops, level, label, stageIndex) {
+    if (stageIndex != null && stageIndex !== stage.index) {
+      log(`Ignored a change for level ${stageIndex + 1}; level ${stage.index + 1} is loaded`, "error");
+      return false;
+    }
     const next = structuredClone(level);
     const scene = activeScene();
     if (!scene || scene.dead) { currentLevel = next; return false; } // a restart is coming anyway
@@ -514,10 +734,42 @@
     }
   }
 
+  function updateStageUi() {
+    const bar = document.getElementById("stage-bar");
+    if (!bar) return;
+    bar.innerHTML = "";
+    stage.names.forEach((name, i) => {
+      const b = document.createElement("button");
+      b.textContent = `${i + 1}. ${name}`;
+      if (i === stage.index) b.className = "active";
+      b.addEventListener("click", () => goToStage(i));
+      bar.appendChild(b);
+    });
+  }
+
+  // Switch the backend's active level and load it. Edits made to each level are kept when you leave it.
+  async function goToStage(i) {
+    try {
+      const res = await fetch("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ index: i }) });
+      const d = await res.json();
+      if (!d.ok) { log(`No level ${i + 1}`, "error"); return false; }
+      stage = { index: d.index, count: d.count, names: d.names };
+      updateStageUi();
+      loadLevel(d.level);
+      log(`Level ${d.index + 1}/${d.count}: ${d.level.name}`, "ok");
+      return true;
+    } catch (err) {
+      log(`Couldn't switch level: ${err.message}`, "error");
+      return false;
+    }
+  }
+
   let game = null;
   async function boot() {
-    const [res] = await Promise.all([fetch("/api/level"), S.init()]);
+    const [res, st] = await Promise.all([fetch("/api/level"), fetch("/api/stage"), S.init()]);
     currentLevel = await res.json();
+    stage = await st.json();
+    updateStageUi();
     game = new Phaser.Game({
       type: Phaser.AUTO,
       parent: "game",
@@ -532,13 +784,14 @@
   document.getElementById("reset-btn").addEventListener("click", async () => {
     const res = await fetch("/api/level/reset", { method: "POST" });
     loadLevel(await res.json());
-    log("Reset to sample level", "info");
+    log("Reset this level to its original layout", "info");
   });
 
   window.Sketch2Game = {
-    loadLevel, applyPatch, log,
+    loadLevel, applyPatch, goToStage, log,
     // Live look changes (no restart). Unknown sprite names fall back to the type's default.
     setAppearance(id, changes) { const s = activeScene(); return s ? s.setAppearance(id, changes) : false; },
+    // look: {sprite, tint, bigSprite}; bigSprite is the look while grown by a "grow" power-up.
     setPlayerLook(look) { playerLook = { ...playerLook, ...look }; const s = activeScene(); if (s) s.skinPlayer(); },
     // Visual test for projectiles and trails until the fireball runtime (O7) exists.
     debugProjectile(sprite, tint) {
@@ -549,6 +802,7 @@
     },
     get level() { return currentLevel; },
     get scene() { return game && game.scene.getScene("game"); },
+    get stage() { return stage.index; },
   };
   boot();
 })();

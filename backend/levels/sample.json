@@ -26,6 +26,7 @@
     { "id": "coin4", "type": "coin", "x": 34, "y": 7 },
 
     { "id": "dj1", "type": "double_jump", "x": 4, "y": 12 },
+    { "id": "grow1", "type": "grow", "x": 18, "y": 12 },
 
     { "id": "goal", "type": "goal", "x": 38, "y": 11, "w": 1, "h": 2 }
   ]

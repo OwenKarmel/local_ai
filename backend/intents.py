@@ -4,13 +4,15 @@ The model refers only to ids/regions from summary.summary_text(); intent_schema(
 fields to ids that actually exist, so the model can't invent one.
 """
 import copy
+import re
 from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
+from .looks import AddReaction, RemoveReaction, SetLook, SetScene, add_reaction, remove_reaction, restrict_schema, set_look, set_scene
 from .patcher import Editor, PatchError, _rect_overlap, fmt_validation
 from .schema import Level, Scalar
-from .summary import FIXED_REGIONS, PLAYER_REGIONS, analyze, overlaps_x, regions, support_of
+from .summary import FIXED_REGIONS, PLAYER_REGIONS, analyze, overlaps_x, prop_spec, regions, roam_span, support_of
 
 MIN_GROUND = 3  # a ground platform never shrinks below this many tiles
 PHYSICS_LIMITS = {"gravity": (300, 3000), "jump_velocity": (200, 1200), "run_speed": (80, 500)}
@@ -58,7 +60,7 @@ class Remove(BaseModel):
 class SetProperty(BaseModel):
     op: Literal["set_property"]
     id: str
-    key: str = Field(description="speed, range, or behaviors")
+    key: str = Field(description="a prop the object's behaviors read (see the summary), or behaviors")
     value: Union[Scalar, list[str]]
 
 
@@ -77,7 +79,7 @@ class AddPlatform(BaseModel):
 
 class AddPickup(BaseModel):
     op: Literal["add_pickup"]
-    kind: Literal["double_jump"]
+    kind: Literal["double_jump", "grow"]
     region: str
     count: int = Field(1, ge=1, le=3)
 
@@ -88,7 +90,8 @@ class Unsupported(BaseModel):
 
 
 IntentOp = Annotated[Union[WidenGap, ShrinkPlatform, AddEnemy, AddHazardNear, AddCoins, AddPlatform, AddPickup, Remove,
-                           SetProperty, SetPhysics, Unsupported], Field(discriminator="op")]
+                           SetProperty, SetPhysics, SetLook, SetScene, AddReaction, RemoveReaction, Unsupported],
+                     Field(discriminator="op")]
 
 
 class IntentPatch(BaseModel):
@@ -96,10 +99,15 @@ class IntentPatch(BaseModel):
     # asks for, and which op does exactly that, before committing to ops. Lenient here: a missing plan is not an error.
     plan: str = ""
     ops: list[IntentOp]
+    # Per op: the words of the command it carries out ("asked", written right after "op"; see intent_schema).
+    # Kept beside ops (not on each op model) so the op classes stay what compile_intent consumes.
+    asked: list[str] = []
 
 
 PLAN_MAX_CHARS = 200
-PICKUP_ID_PREFIX = {"double_jump": "dj"}
+ASKED_MAX_CHARS = 60
+_WORD = re.compile(r"[a-z0-9]+")
+PICKUP_ID_PREFIX = {"double_jump": "dj", "grow": "grow"}
 
 
 # ---------- schema restricted to this level's ids ----------
@@ -125,14 +133,60 @@ def intent_schema(level: dict, player: dict | None) -> dict:
     d["AddPlatform"]["properties"]["over"]["enum"] = [g for g in gap_ids if g != "none"] + region_names
     for k in ("Remove", "SetProperty"):
         d[k]["properties"]["id"]["enum"] = all_ids
+    restrict_schema(d, all_ids)
+    # Every op starts with "asked" (right after "op"): the command's own words that this op carries out. Writing
+    # it before the op's fields ties each op to something the player said, so the model stops adding extras
+    # ("make me big" -> also a brown tint and faster running). drop_unasked() enforces it.
+    for ref in s["properties"]["ops"]["items"]["oneOf"]:
+        od = d[ref["$ref"].rsplit("/", 1)[-1]]
+        props = dict(od["properties"])
+        od["properties"] = {"op": props.pop("op"),
+                            "asked": {"type": "string", "maxLength": ASKED_MAX_CHARS,
+                                      "description": "the exact words of the command this op carries out"},
+                            **props}
+        od["required"] = ["op", "asked"] + [r for r in od.get("required", []) if r != "op"]
     return s
 
 
 def parse_intent(obj: dict) -> IntentPatch:
+    asked = []
+    if isinstance(obj, dict) and isinstance(obj.get("ops"), list):
+        obj = {**obj, "ops": [dict(o) if isinstance(o, dict) else o for o in obj["ops"]]}
+        asked = [str(o.pop("asked", "") or "") if isinstance(o, dict) else "" for o in obj["ops"]]
     try:
-        return IntentPatch.model_validate(obj)
+        intent = IntentPatch.model_validate(obj)
     except ValidationError as e:
         raise PatchError("Patch format is invalid:\n" + fmt_validation(e))
+    intent.asked = asked
+    return intent
+
+
+def _from_command(quote: str, command: str) -> bool:
+    """True if `quote` is (mostly) words the player actually said. Lenient on purpose: at least half of the quote's
+    words must appear in the command, so small paraphrases ("bigger" for "big") pass but invented reasons don't."""
+    q = _WORD.findall(quote.lower())
+    if not q:
+        return False
+    said = _WORD.findall(command.lower())
+
+    def heard(w: str) -> bool:  # same word, or one is a prefix of the other ("big"/"bigger", "enemy"/"enemies" no)
+        return any(w == s or (min(len(w), len(s)) >= 3 and (w.startswith(s) or s.startswith(w))) for s in said)
+
+    return sum(map(heard, q)) * 2 >= len(q)
+
+
+def drop_unasked(intent: IntentPatch, command: str) -> list[str]:
+    """Remove ops whose "asked" quote isn't from the command (changes nobody asked for). Returns notes for the log.
+    An op with no quote at all is kept (older replies / servers that ignore the schema)."""
+    keep, notes, asked = [], [], intent.asked or [""] * len(intent.ops)
+    for n, (op, q) in enumerate(zip(intent.ops, asked)):
+        if op.op != "unsupported" and q.strip() and not _from_command(q, command):
+            notes.append(f"op {n + 1} ({op.op}) dropped: \"{q}\" is not something the command asked for")
+            continue
+        keep.append((op, q))
+    intent.ops = [o for o, _ in keep]
+    intent.asked = [q for _, q in keep]
+    return notes
 
 
 # ---------- compiling intents to coordinates ----------
@@ -501,7 +555,7 @@ def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None
                     ed.done.append(f"removed {op.id}")
         elif op.op == "set_property":
             e = ed.require(op.id, where)
-            if e is None or _behind(ed, e, where):
+            if e is None or _behind(ed, roam_span(e, ed.ents), where):
                 continue
             old = e["props"].get(op.key.removeprefix("props."))
             if op.key == "behaviors":
@@ -519,13 +573,36 @@ def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None
                                  f"nothing (props are only read by behaviors). Objects with behaviors: {with_b}")
                 continue
             else:
-                ed.set(e, f"props.{op.key.removeprefix('props.')}", op.value)
+                k = op.key.removeprefix("props.")
+                value, spec = op.value, prop_spec(e, k)
+                if spec:
+                    _, lo, hi = spec
+                    if isinstance(value, bool) or not isinstance(value, (int, float)):
+                        ed.errors.append(f"{where}: {e['id']} {k} must be a number from {lo:g} to {hi:g}; got {value!r}")
+                        continue
+                    clamped = min(max(value, lo), hi)
+                    if clamped != value:
+                        ed.repairs.append(f"{e['id']} {k} clamped {value:g} -> {clamped:g} (allowed {lo:g}-{hi:g})")
+                        value = clamped
+                ed.set(e, f"props.{k}", value)
+                op = op.model_copy(update={"value": value})
             k = op.key.removeprefix("props.")
             if k == "speed" and isinstance(op.value, (int, float)) and isinstance(old, (int, float)) and op.value != old:
-                ed.done.append(f"made {e['type']}s {'faster' if op.value > old else 'slower'}")
+                alike = sum(x["type"] == e["type"] and x["behaviors"] == e["behaviors"] for x in ed.ents)
+                ed.done.append(f"made {e['type'] + 's' if alike > 1 else e['id']} {'faster' if op.value > old else 'slower'}")
+            elif k != "behaviors" and isinstance(op.value, (int, float)) and not isinstance(op.value, bool):
+                ed.done.append(f"set {e['id']} {k.replace('_', ' ')} to {op.value:g}")
             else:
                 ed.done.append(f"changed {e['type']} {k}")
         elif op.op == "set_physics":
             set_physics(ed, op, where)
+        elif op.op == "set_look":
+            set_look(ed, op, where)
+        elif op.op == "set_scene":
+            set_scene(ed, op, where)
+        elif op.op == "add_reaction":
+            add_reaction(ed, op, where)
+        elif op.op == "remove_reaction":
+            remove_reaction(ed, op, where)
     ed.autofix()
     return ed
