@@ -119,8 +119,8 @@
       ui.reply.className = d.status;
       if (d.reason) log(`${d.status}: ${d.reason}`, "error");
       log(`[${source}] "${text}" → ${d.status} (${secs} s): ${d.spoken}`, d.status === "applied" ? "ok" : "error");
-      // Until live patch application (O3) lands, apply by reloading the level (restarts the run).
-      if (d.status === "applied" && d.level) S().loadLevel(d.level);
+      // Live apply (task 7): no restart; falls back to a reload inside applyPatch if it fails.
+      if (d.status === "applied" && d.level) S().applyPatch(d.patch, d.level, d.spoken);
       setStatus(d.status === "applied" ? "Done. Hold to talk again." : d.status === "refused" ? "Refused." : "Error.",
                 d.status === "applied" ? "" : "error");
       speak(d.spoken, d.status === "refused" ? "refusal" : "normal");
