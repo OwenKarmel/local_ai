@@ -7,7 +7,7 @@ import logging
 import time
 
 from .intents import compile_intent, intent_schema, parse_intent
-from .llm import LLMError, chat, short_name
+from .llm import STRUCTURED_SAMPLER, LLMError, chat, short_name
 from .patcher import PatchError, extract_json
 from .prompts import intent_messages, retry_message
 from .schema import Level
@@ -46,7 +46,7 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None)
     for attempt in range(1 + MAX_MODEL_RETRIES):
         last = attempt == MAX_MODEL_RETRIES
         try:
-            res = chat(model, messages, schema=schema)
+            res = chat(model, messages, schema=schema, sampler=STRUCTURED_SAMPLER)
         except LLMError as e:
             steps.append({"step": "model", "model": name, "latency_ms": 0, "errors": [str(e)], "repairs": []})
             return out("error", spoken="I can't reach the model right now.", reason=str(e))
@@ -86,7 +86,10 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None)
                       "(Refusals for unbeatable levels arrive with the playability checker.)")
             return out("refused", spoken=f"I can't do that yet: {unsupported[0].rstrip('.')}.", reason=reason)
         if not errors and not patch:
-            errors = ["The ops changed nothing in the level. Return ops that actually make the requested change."]
+            # Say WHY nothing changed (e.g. "gravity is already 1200", "skipped gap1: behind the player"),
+            # so the retry can fix it instead of giving up with an empty list.
+            errors = ["The ops changed nothing in the level. Return ops that actually make the requested change, "
+                      "or one unsupported op if no operation can do it.", *(ed.repairs if ed is not None else [])]
             cstep["errors"] = errors
         if not last:
             cstep["repairs"].append("asked the model to fix the errors (1 retry)")
