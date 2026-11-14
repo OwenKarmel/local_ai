@@ -95,6 +95,7 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game plus side panel |
 | `frontend/game.js` | Phaser scene: builds the level from JSON, player controls, collisions, win/death |
+| `frontend/voice.js` | Hold-to-talk (button or V), listening badge + mic meter, typed fallback; calls `/api/transcribe`, `/api/command`, `/api/speak` |
 | `frontend/sprites.js` | `window.SPRITES`: loads the sprite catalog, skins entities (with fallbacks), particle effects, projectile visuals |
 | `frontend/assets/catalog.json` | Sprite catalog: name, file, type, description, size, animations, tilesets, per-type defaults |
 | `frontend/assets/catalog.txt` | Compact `name: description` list for model prompts |
