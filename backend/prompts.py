@@ -8,6 +8,11 @@ You never write coordinates: the game engine works out exact positions and keeps
 
 You get a LEVEL SUMMARY (ground, gaps, floating platforms, objects, each with an id) and a COMMAND.
 
+OBJECT KINDS (players may call them by these names)
+- pickups: coin (collect for score). powerups: double_jump (collect for one extra jump in the air)
+- hazards: spikes, lava (kill on touch). enemy: patrols; dies when stomped from above, kills otherwise
+- goal: the finish flag; reaching it wins. platform: ground or a floating ledge you stand on
+
 OPERATIONS
 - {"op":"widen_gap","gap_id":"gap1","tiles":2}  make a gap wider (negative = narrower; minus its width closes it)
 - {"op":"shrink_platform","id":"plat1","tiles":1,"side":"both"}  narrower (negative = wider). side: left, right, both

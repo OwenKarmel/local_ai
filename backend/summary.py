@@ -8,6 +8,10 @@ FIXED_REGIONS = ("start", "middle", "end")
 PLAYER_REGIONS = ("near_player", "ahead")  # only offered while the game is being played
 NEAR_TILES = (2, 6)    # near_player = x+2 .. x+5
 AHEAD_TILES = (2, 15)  # ahead       = x+2 .. x+14
+# Category word shown after each object's type, so players' words ("powerup", "hazard", "flag") match an object.
+# The prompt's OBJECT KINDS legend explains each category once.
+KIND_TAG = {"coin": "pickup", "double_jump": "powerup", "spikes": "hazard", "lava": "hazard", "enemy": "enemy",
+            "goal": "finish flag"}
 
 
 def overlaps_x(a: dict, x0: int, x1: int) -> bool:
@@ -108,5 +112,7 @@ def summary_text(level: dict, player: dict | None = None) -> str:
             extra = f", speed {e['props'].get('speed', 60)}"
         elif e["type"] in ("spikes", "lava") and e["w"] > 1:
             extra = f", {e['w']} wide"
-        L.append(f"  {e['id']}: {e['type']} {where} at {_span(e)}{extra}{rel(e)}")
+        tag = KIND_TAG.get(e["type"])
+        kind = e["type"] if tag in (None, e["type"]) else f"{e['type']} ({tag})"
+        L.append(f"  {e['id']}: {kind} {where} at {_span(e)}{extra}{rel(e)}")
     return "\n".join(L)
