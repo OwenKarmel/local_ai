@@ -120,7 +120,7 @@ Status: `todo`, `doing`, `in review`, `done`. Update when a PR opens or merges. 
 | O5 | SpeakerKit chaos mode: enroll two voices (player, friend); return `speaker` in `/api/transcribe`; HUD shows who spoke | P1 | O1 | backend/main.py (transcribe), frontend/ | two voices are told apart | todo |
 | O6 | Copilot HUD: change log (what changed, model, latency), refusal banner, version number, undo reachable while playing | P1 | O3 | frontend/ | visible during play | todo |
 | O7 | Fireball runtime: press the configured key to shoot in the facing direction; cooldown, bounce, kills enemies, removed on wall hit. Reads `abilities.fireball` from the level | P2 | O3, A9 | frontend/ | fireball kills an enemy | todo |
-| O8 | Sprites and effects: one CC0 Kenney pack in `frontend/assets/sprites/`, sprite catalog, player animations, tiled platforms, optional per-entity `sprite` and `tint`, particle effects | P1 | touches game.js, so coordinate with O3 | frontend/, schema (optional fields) | sample level renders and plays with sprites, offline | doing (branch `o8-sprites`, done from Ashwin's session at Ashwin's request) |
+| O8 | Sprites and effects: one CC0 Kenney pack in `frontend/assets/sprites/`, sprite catalog, player animations, tiled platforms, optional per-entity `sprite` and `tint`, particle effects | P1 | touches game.js, so coordinate with O3 | frontend/, schema (optional fields) | sample level renders and plays with sprites, offline | in review as PR #2 (branch `o8-sprites`, done from Ashwin's session at Ashwin's request) |
 
 ### Both
 | ID | Title | Pri | Done when | Status |
