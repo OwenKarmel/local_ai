@@ -11,7 +11,14 @@ Sketch2Game is an offline, AI-powered 2D platformer maker. The user draws a leve
   - `CODE_MODEL` (default Bonsai 2 9B): level patches and mechanics code.
   - `FAST_MODEL` (default Bonsai 2 2B): conversational replies and simple classification (incl. drawing labels, see plan.md).
   - Log which model handled each request and its latency (backend log + side panel).
-- Speech (Argmax local transcription) comes later: a transcript must enter the **same command pipeline** as typed text (`source: "text" | "voice"`).
+- Speech: Argmax local transcription server (URL in `ARGMAX_URL`). A transcript enters the **same command pipeline** as typed text (`POST /api/command` with `source: "voice"` vs `"typed"`).
+
+## Ownership
+- **Ashwin owns `backend/`**: FastAPI, model client, patches, validation, version history, mechanics sandbox, playability checker, eval script.
+- **Owen owns `frontend/`**: game page, side panel, canvas drawing, push-to-talk UI. Also owns the Argmax speech setup.
+- **Shared** (tell the other person before changing): `CLAUDE.md`, `plan.md`, `frontend/mechanics.js`, the level schema (`backend/schema.py` and the JSON format below), and the interface contracts in plan.md.
+- Each Claude session stays in its owner's files. If a task needs a change on the other side, describe the change in the PR instead of making it.
+- Frontend and backend meet only through the HTTP contracts in plan.md. Stubs on main return fake responses until the real endpoints merge.
 
 ## Rules
 - Model-written code may only go in `frontend/mechanics.js`. Never let the model touch any other file.
@@ -80,9 +87,9 @@ Browser (one page, plain JS)                 FastAPI (Python)                 Lo
 ## File map
 | Path | What it does |
 |---|---|
-| `backend/main.py` | FastAPI app: serves `frontend/`; `GET /api/level`, `POST /api/level/reset`, `GET /api/health` |
+| `backend/main.py` | FastAPI app: serves `frontend/`; `GET /api/level`, `POST /api/level/reset`, `GET /api/health`, plus contract endpoints (some still `STUB`, see plan.md) |
 | `backend/schema.py` | Pydantic models: `Level`, `Entity`, `Physics`, patch ops |
-| `backend/config.py` | Env-var config: `BONSAI_BASE_URL`, `CODE_MODEL`, `FAST_MODEL` |
+| `backend/config.py` | Env-var config: `BONSAI_BASE_URL`, `CODE_MODEL`, `FAST_MODEL`, `ARGMAX_URL` |
 | `backend/levels/sample.json` | Handwritten sample level, 40×15, 4 coins (must always work) |
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game left, side panel right |
@@ -122,14 +129,40 @@ Browser (one page, plain JS)                 FastAPI (Python)                 Lo
 ```
 `set` keys: `x, y, w, h, type, behaviors`, or `props.<name>`. `set_physics` keys: `gravity, jump_velocity, run_speed`. Ops apply in order; result must validate as a `Level`.
 
-## Run
+## Setup for a new teammate (Apple Silicon Mac)
+Needs: Python 3.10+, git, `gh` logged in (`gh auth login`). Steps 1–3 and 6–7 are enough for the game and all stub endpoints; **the model server (4–5) is only needed for real model calls.**
 ```bash
+# 1. Clone
+git clone https://github.com/OwenKarmel/local_ai.git && cd local_ai
+
+# 2. Python env for the backend
 python3 -m venv .venv && source .venv/bin/activate
+
+# 3. Backend deps
 pip install -r backend/requirements.txt
-uvicorn backend.main:app --reload --port 8000
-# open http://localhost:8000
+
+# 4. Model runtime + Bonsai 2 models (one-time, needs internet, about 6.6 GB of models)
+python3 -m venv ~/models/mlx-venv && ~/models/mlx-venv/bin/pip install "mlx-vlm>=0.7.8"
+mkdir -p ~/models/prism-ml && cd ~/models/prism-ml
+for s in 2B 4B 9B; do ~/models/mlx-venv/bin/hf download prism-ml/Ternary-Bonsai-2-$s-mlx-2bit --local-dir Ternary-Bonsai-2-$s-mlx-2bit; done
+cd -
+
+# 5. Model server (separate terminal; works offline)
+~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-9B-mlx-2bit --host 127.0.0.1 --port 1234
+
+# 6. Backend (separate terminal, from the repo root)
+source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000
+
+# 7. Open the game
+open http://localhost:8000
 ```
-Controls: arrows/WASD move, Space/Up/W jump, R restart.
+No `.env` needed: config defaults point at `~/models/prism-ml/...` and `localhost`. Check with `curl localhost:8000/api/health`.
+
+## Run (day to day)
+```bash
+source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000   # http://localhost:8000
+```
+Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py` only; after editing `sample.json`, restart or use the Reset button.
 
 ## Model endpoint config
 | Env var | Default |
@@ -137,19 +170,13 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart.
 | `BONSAI_BASE_URL` | `http://localhost:1234/v1` |
 | `CODE_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-9B-mlx-2bit` (patches, mechanics code) |
 | `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-2B-mlx-2bit` (chat replies, classification) |
+| `BONSAI_MODELS_DIR` | `~/models/prism-ml` (base for the two defaults above) |
+| `ARGMAX_URL` | `http://localhost:50060/v1` (placeholder; confirm with Argmax setup) |
 Env values must match the IDs at `GET $BONSAI_BASE_URL/models` (for mlx_vlm.server that's the absolute folder path; for LM Studio, its model key).
 
 ### Model setup (Mac, MLX — what we use)
-Bonsai 2 MLX packs (`model_type: prism_hadamard_qwen35`) need **mlx-vlm ≥ 0.7.8**; released mlx-lm (and so likely LM Studio's MLX engine) can't load them yet. One-time, needs internet:
-```bash
-mkdir -p ~/models/prism-ml && cd ~/models/prism-ml
-for s in 2B 4B 9B; do hf download prism-ml/Ternary-Bonsai-2-$s-mlx-2bit --local-dir Ternary-Bonsai-2-$s-mlx-2bit; done
-python3 -m venv ~/models/mlx-venv && ~/models/mlx-venv/bin/pip install "mlx-vlm>=0.7.8"
-```
-Run the server (offline OK):
-```bash
-~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-9B-mlx-2bit --host 127.0.0.1 --port 1234
-```
+Bonsai 2 MLX packs (`model_type: prism_hadamard_qwen35`) need **mlx-vlm ≥ 0.7.8**; released mlx-lm (and so likely LM Studio's MLX engine) can't load them yet. Install and run commands: see "Setup for a new teammate" steps 4–5.
+- One server process keeps one model loaded; requesting the other swaps it (about 4 s). It honors `response_format: json_schema`.
 - Thinking is off by default (`--enable-thinking` turns it on). Send sampler params per request; non-thinking: `temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.5`.
 - Sizes on disk: 2B 1.2 GB, 4B 1.9 GB, 9B 3.5 GB. All are vision models (needed for drawing labels).
 - Fallback for non-Mac / llama.cpp: `prism-ml/Ternary-Bonsai-2-*-gguf`.
