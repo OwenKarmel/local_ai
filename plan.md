@@ -99,7 +99,7 @@ Status: `todo`, `doing`, `in review`, `done`. Update when a PR opens or merges. 
 
 **Why the split:** Owen doesn't have a Mac. Argmax (speech-to-text, TTS) and our Bonsai MLX models only run on Apple silicon, and Ashwin's Mac is the demo machine. So Mac-only work is Ashwin's and Owen takes work that runs on any machine. IDs are unchanged so old references still work; moved tasks say where they came from.
 
-**Pending:** we've asked the organizers for a loaner MacBook for Owen. If one arrives, Owen can also run the models and Argmax locally; the task split stays the same.
+Owen has no Mac and no loaner. He is working on an Acer laptop. All Mac-only work (MLX models, Argmax, demo recording) is Ashwin's.
 
 ### Ashwin (Mac required)
 | ID | Title | Pri | Depends on | Files | Done when | Status |
@@ -113,7 +113,7 @@ Status: `todo`, `doing`, `in review`, `done`. Update when a PR opens or merges. 
 | A7 | Speaker permissions for chaos mode: if speaker is "friend", allow only harder-making ops; refuse helpful ones with a spoken reason | P1 | O5, A5 | backend/ | friend's "remove the enemies" is refused out loud | todo |
 | A8 | Eval script and table: 20 commands across both routes; valid rate, refusal correctness, latency per model; markdown table for the demo | P1 | A4, A5 | backend/ | table generated | started: 14-command version merged with PR #1 |
 | A9 | Fireball ability backend: schema for `abilities.fireball` and ops support | P2 | A2 | backend/ | "give me fireballs" returns a valid set_ability | mostly done in PR #1 (set_ability with fireball defaults) |
-| O5 | SpeakerKit chaos mode: enroll two voices (player, friend); return `speaker` in `/api/transcribe`; HUD shows who spoke. Needs a Mac; owner to be decided (Ashwin, or Owen if the loaner Mac arrives) | P1 | O1 | backend/main.py (transcribe), frontend/ | two voices are told apart | todo |
+| O5 | SpeakerKit chaos mode: enroll two voices (player, friend); return `speaker` in `/api/transcribe`; HUD shows who spoke. Needs a Mac, so Ashwin | P1 | O1 | backend/main.py (transcribe), frontend/ | two voices are told apart | todo |
 | A10 | Precomputed difficulty ladder. Keep a short ladder of relative difficulty steps ready at all times (e.g. harder 1–3, easier 1–2). Steps are relative ops resolved against the player's position at apply time ("next gap +1 tile", "one enemy 6 tiles ahead", "enemies 20% faster", "remove nearest enemy ahead"), not finished levels. Generated deterministically from difficulty knobs (gap width, enemy count and speed, hazards); no model calls by default (later, optionally, Bonsai picks or orders steps from the generated options). Each step is verified with the checker before it's stored; only beatable steps go on the ladder. Rebuilt in the background after every applied change and discarded whenever the level changes. The router sends "make this harder", "make it easier" and close variants to the ladder; everything else goes to Bonsai as before. Logs route `"ladder"` with latency; `spoken` says what changed, like any edit | P1 | A5 (checker) for verification; fits inside A4's routing | `backend/ladder.py` (new), hook in the command router; adds `"ladder"` to `route` in `backend/main.py` | "make this harder" and "make it easier" apply in under 200 ms, the result passes the checker, and changes land ahead of the player | todo |
 | J1 | Offline test: full flow with Wi-Fi off on the demo Mac (Ashwin's); fix anything that needs network | P0 | everything P0 | — | demo script runs offline | todo |
 
@@ -185,6 +185,7 @@ def check(level: dict, player: dict | None) -> dict:
 | 11-14 15:10 | **Task split by machine:** Ashwin takes Mac-only work (O1, O4, A4, A6, J1, and recording J2/J3); Owen takes A3 (shared physics config) and A5 (playability checker) plus O2, O3, O6, O7. IDs kept, owners changed | Owen has no Mac. Argmax and Bonsai MLX only run on Apple silicon, and Ashwin's Mac is the demo machine. A3 and A5 are pure Python/JS and need no models |
 | 11-14 15:10 | Checker interface: `check(level, player) -> {ok, reason, spoken}` in `backend/checker.py` | Owen owns the checker, Ashwin owns the pipeline; a function boundary keeps them out of each other's files |
 | 11-14 15:20 | **New task A10: precomputed difficulty ladder** (Ashwin, P1). "Make this harder" / "make it easier" are answered from checker-verified steps prepared in the background, with no model call | These are the most common live commands and the demo's centerpiece. A model call takes 9–25 s; a stored step can apply in under 200 ms, and pre-verification means it can never make the level unbeatable |
+| 11-14 15:30 | No loaner Mac for Owen; O5 (SpeakerKit) goes to Ashwin | Owen works on an Acer laptop; SpeakerKit needs Apple silicon |
 | 11-14 15:20 | **Contract: `route` gains the value `"ladder"`** in the `/api/command` response | Ladder answers aren't fast-route or level-route model calls; the HUD and eval should show them separately. The frontend should treat unknown route values as display-only. The backend type changes when A10 lands |
 
 ## Dropped
