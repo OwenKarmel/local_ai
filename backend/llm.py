@@ -9,8 +9,11 @@ from . import config
 log = logging.getLogger("llm")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
-# Bonsai 2 recommended non-thinking sampler (see model card).
+# Bonsai 2 recommended non-thinking sampler (see model card). Tuned for chat and open-ended text.
 SAMPLER = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "presence_penalty": 1.5}
+# For picking ops from a fixed menu (JSON schema). Low temperature: the model should take its most likely reading
+# of the command. No presence penalty: JSON repeats the same tokens ("op", quotes, braces) by design.
+STRUCTURED_SAMPLER = {"temperature": 0.2, "top_p": 0.8, "top_k": 20, "presence_penalty": 0.0}
 
 
 class LLMError(Exception):
@@ -21,9 +24,10 @@ def short_name(model: str) -> str:
     return model.rstrip("/").split("/")[-1]
 
 
-def chat(model: str, messages: list[dict], schema: dict | None = None, max_tokens: int = 1024, timeout: float = 120) -> dict:
+def chat(model: str, messages: list[dict], schema: dict | None = None, max_tokens: int = 1024, timeout: float = 120,
+         sampler: dict | None = None) -> dict:
     """Returns {"text", "model", "latency_ms", "usage"}. Raises LLMError if the server is unreachable/errs."""
-    body = {"model": model, "messages": messages, "max_tokens": max_tokens, **SAMPLER}
+    body = {"model": model, "messages": messages, "max_tokens": max_tokens, **(sampler or SAMPLER)}
     if schema is not None:
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": "patch", "schema": schema, "strict": True}}
     t0 = time.perf_counter()

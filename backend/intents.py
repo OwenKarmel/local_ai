@@ -8,7 +8,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .patcher import Editor, PatchError, fmt_validation
+from .patcher import Editor, PatchError, _rect_overlap, fmt_validation
 from .schema import Level, Scalar
 from .summary import FIXED_REGIONS, PLAYER_REGIONS, analyze, overlaps_x, regions, support_of
 
@@ -68,18 +68,38 @@ class SetPhysics(BaseModel):
     value: float
 
 
+class AddPlatform(BaseModel):
+    op: Literal["add_platform"]
+    over: str = Field(description="gap id, region, or platform id the new platform floats over")
+    height: int = Field(3, ge=1, le=6, description="tiles above the ground")
+    width: int = Field(3, ge=1, le=6)
+
+
+class AddPickup(BaseModel):
+    op: Literal["add_pickup"]
+    kind: Literal["double_jump"]
+    region: str
+    count: int = Field(1, ge=1, le=3)
+
+
 class Unsupported(BaseModel):
     op: Literal["unsupported"]
     reason: str = Field(description="what part of the command these operations can't express")
 
 
-IntentOp = Annotated[Union[WidenGap, ShrinkPlatform, AddEnemy, AddHazardNear, AddCoins, Remove, SetProperty,
-                           SetPhysics, Unsupported], Field(discriminator="op")]
+IntentOp = Annotated[Union[WidenGap, ShrinkPlatform, AddEnemy, AddHazardNear, AddCoins, AddPlatform, AddPickup, Remove,
+                           SetProperty, SetPhysics, Unsupported], Field(discriminator="op")]
 
 
 class IntentPatch(BaseModel):
-    explanation: str = ""
+    # Written BEFORE ops (intent_schema makes it required and first), so the model decides what the command
+    # asks for, and which op does exactly that, before committing to ops. Lenient here: a missing plan is not an error.
+    plan: str = ""
     ops: list[IntentOp]
+
+
+PLAN_MAX_CHARS = 200
+PICKUP_ID_PREFIX = {"double_jump": "dj"}
 
 
 # ---------- schema restricted to this level's ids ----------
@@ -90,13 +110,19 @@ def intent_schema(level: dict, player: dict | None) -> dict:
     plat_ids = [p["id"] for p in a["ground"] + a["floating"]]
     gap_ids = [g["id"] for g in a["gaps"]] or ["none"]
     region_names = list(FIXED_REGIONS) + (list(PLAYER_REGIONS) if player else []) + plat_ids
+    # Grammar-constrained decoders emit required properties first, in this order. `plan` was optional, so the
+    # model chose ops first and wrote the explanation afterwards as a justification. Required + first = think first.
+    s["properties"] = {"plan": {**s["properties"]["plan"], "maxLength": PLAN_MAX_CHARS}, "ops": s["properties"]["ops"]}
+    s["required"] = ["plan", "ops"]
+    s["properties"]["ops"]["minItems"] = 1  # declining must be an explicit `unsupported` op, not an empty list
     s["properties"]["ops"]["maxItems"] = 6  # long op lists cost seconds of decode time
     d = s["$defs"]
     d["WidenGap"]["properties"]["gap_id"]["enum"] = gap_ids
     d["ShrinkPlatform"]["properties"]["id"]["enum"] = plat_ids
     d["AddHazardNear"]["properties"]["platform_id"]["enum"] = plat_ids
-    for k in ("AddEnemy", "AddCoins"):
+    for k in ("AddEnemy", "AddCoins", "AddPickup"):
         d[k]["properties"]["region"]["enum"] = region_names
+    d["AddPlatform"]["properties"]["over"]["enum"] = [g for g in gap_ids if g != "none"] + region_names
     for k in ("Remove", "SetProperty"):
         d[k]["properties"]["id"]["enum"] = all_ids
     return s
@@ -356,7 +382,80 @@ def add_coins(ed: Editor, op: AddCoins, where: str):
         ed.done.append(f"added {len(picked)} coin{'s' if len(picked) > 1 else ''} {_where_words(op.region)}")
 
 
-def set_physics(ed: Editor, op: SetPhysics):
+def add_pickup(ed: Editor, op: AddPickup, where: str):
+    r = _region(ed, op.region, where)
+    if r is None:
+        return
+    plats, (lo, hi) = r
+    coin_cells = {(e["x"], e["y"]) for e in ed.ents if e["type"] == "coin"}  # _spots already avoids other objects
+    spots = [(x, p) for x, p in _spots(ed, plats, lo, hi) if (x, p["y"] - 1) not in coin_cells]
+    picked = _spread(sorted(spots, key=lambda s: s[0]), op.count)
+    for x, p in picked:
+        ed.add({"id": ed.new_id(PICKUP_ID_PREFIX.get(op.kind, op.kind)), "type": op.kind, "x": x, "y": p["y"] - 1})
+    name = op.kind.replace("_", " ")
+    if not picked:
+        ed.errors.append(f"{where}: no free spot {_where_words(op.region)} for a {name} pickup. "
+                         f"Pick another region ({', '.join(regions(ed.d['width'], ed.player))}) or a platform id")
+        return
+    if len(picked) < op.count:
+        ed.repairs.append(f"only room for {len(picked)} of {op.count} {name} pickups {_where_words(op.region)}")
+    many = len(picked) > 1
+    ed.done.append(f"added {len(picked) if many else 'a'} {name} pickup{'s' if many else ''} {_where_words(op.region)}")
+
+
+def _span_of(ed: Editor, over: str, where: str) -> tuple[int, int, str] | None:
+    """x range [lo, hi) for a gap id, region or platform id, plus words for the spoken reply."""
+    gap = next((g for g in analyze(ed.d)["gaps"] if g["id"] == over), None)
+    if gap:
+        return gap["x"], gap["x"] + gap["w"], f"over {over}"
+    regs = regions(ed.d["width"], ed.player)
+    if over in regs:
+        lo, hi = regs[over]
+        return lo, hi, _where_words(over)
+    p = ed.get(over)
+    if p and p["type"] == "platform":
+        return p["x"], p["x"] + p["w"], f"above {over}"
+    ed.errors.append(f"{where}: 'over' must be a gap id, one of {', '.join(regs)}, or a platform id; got '{over}'")
+    return None
+
+
+def add_platform(ed: Editor, op: AddPlatform, where: str):
+    span = _span_of(ed, op.over, where)
+    if span is None:
+        return
+    lo, hi, words = span
+    if _behind(ed, {"id": op.over, "x": lo, "w": hi - lo}, where):
+        return
+    W, ground_top = ed.d["width"], analyze(ed.d)["ground_top"]
+    w = min(op.width, W)
+    cells = ed.player_cells()
+
+    def fits(x: int, y: int) -> bool:
+        if x < 0 or x + w > W or y < 1:
+            return False
+        rect = {"x": x, "y": y, "w": w, "h": 1}
+        pad = {"x": x - 1, "y": y - 1, "w": w + 2, "h": 3}  # keep a tile clear of other platforms (no accidental walls)
+        if any(_rect_overlap(pad if e["type"] == "platform" else rect, e) for e in ed.ents):
+            return False
+        return not any((cx, y) in cells for cx in range(x, x + w))
+
+    center = (lo + hi - w) // 2  # centered on the span; may overhang it if the span is narrower than the platform
+    xs = sorted(range(max(0, lo - w + 1), min(W - w, hi - 1) + 1), key=lambda x: (abs(x - center), x))
+    for h in sorted(range(1, 7), key=lambda h: (abs(h - op.height), h)):  # requested height first, then nearest
+        y = ground_top - h
+        x = next((x for x in xs if fits(x, y)), None)
+        if x is None:
+            continue
+        if h != op.height:
+            ed.repairs.append(f"{where}: no room {op.height} tiles up {words}; placed it {h} tiles up")
+        ed.add({"id": ed.new_id("plat"), "type": "platform", "x": x, "y": y, "w": w, "h": 1})
+        ed.done.append(f"added a platform {words}")
+        return
+    ed.errors.append(f"{where}: no free space for a {w}-wide platform {words}; other objects are in the way. "
+                     "Try a smaller width, or another gap, region or platform")
+
+
+def set_physics(ed: Editor, op: SetPhysics, where: str):
     lo, hi = PHYSICS_LIMITS[op.key]
     v = float(min(max(op.value, lo), hi))
     if v != op.value:
@@ -366,6 +465,9 @@ def set_physics(ed: Editor, op: SetPhysics):
     name = op.key.replace("_", " ").replace("jump velocity", "jump strength")
     if v != old:
         ed.done.append(f"{'raised' if v > old else 'lowered'} {name} to {v:g}")
+    else:  # shown to the model in the retry message if the whole reply changed nothing
+        ed.repairs.append(f"{where}: {op.key} is already {old:g}, so this changed nothing; "
+                          f"use a value higher or lower than {old:g}, as the command asks")
 
 
 def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None) -> Editor:
@@ -383,6 +485,10 @@ def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None
             add_hazard_near(ed, op, where)
         elif op.op == "add_coins":
             add_coins(ed, op, where)
+        elif op.op == "add_platform":
+            add_platform(ed, op, where)
+        elif op.op == "add_pickup":
+            add_pickup(ed, op, where)
         elif op.op == "remove":
             e = ed.require(op.id, where)
             if e is not None:
@@ -403,6 +509,15 @@ def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None
             elif op.key in ("x", "y", "w", "h", "type", "id"):
                 ed.errors.append(f"{where}: can't set '{op.key}' directly; use widen_gap or shrink_platform, or remove it and add a new one")
                 continue
+            elif op.key.removeprefix("props.") in PHYSICS_LIMITS:
+                ed.errors.append(f"{where}: {op.key.removeprefix('props.')} is a level-wide physics setting, not a property "
+                                 f"of {e['id']}; use set_physics")
+                continue
+            elif not e["behaviors"]:  # props are read only by behaviors (mechanics.js), so this would do nothing
+                with_b = ", ".join(f"{x['id']} ({'/'.join(x['behaviors'])})" for x in ed.ents if x["behaviors"]) or "none"
+                ed.errors.append(f"{where}: {e['id']} has no behaviors, so props.{op.key.removeprefix('props.')} would do "
+                                 f"nothing (props are only read by behaviors). Objects with behaviors: {with_b}")
+                continue
             else:
                 ed.set(e, f"props.{op.key.removeprefix('props.')}", op.value)
             k = op.key.removeprefix("props.")
@@ -411,6 +526,6 @@ def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None
             else:
                 ed.done.append(f"changed {e['type']} {k}")
         elif op.op == "set_physics":
-            set_physics(ed, op)
+            set_physics(ed, op, where)
     ed.autofix()
     return ed
