@@ -97,9 +97,24 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart.
 | Env var | Default |
 |---|---|
 | `BONSAI_BASE_URL` | `http://localhost:1234/v1` |
-| `CODE_MODEL` | `bonsai-2-9b` (patches, mechanics code) |
-| `FAST_MODEL` | `bonsai-2-2b` (chat replies, classification) |
-Start LM Studio's local server (or `llama-server --port 1234`) with both models loaded. Set the env vars to the exact model IDs your server reports at `GET $BONSAI_BASE_URL/models`.
+| `CODE_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-9B-mlx-2bit` (patches, mechanics code) |
+| `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-2B-mlx-2bit` (chat replies, classification) |
+Env values must match the IDs at `GET $BONSAI_BASE_URL/models` (for mlx_vlm.server that's the absolute folder path; for LM Studio, its model key).
+
+### Model setup (Mac, MLX — what we use)
+Bonsai 2 MLX packs (`model_type: prism_hadamard_qwen35`) need **mlx-vlm ≥ 0.7.8**; released mlx-lm (and so likely LM Studio's MLX engine) can't load them yet. One-time, needs internet:
+```bash
+mkdir -p ~/models/prism-ml && cd ~/models/prism-ml
+for s in 2B 4B 9B; do hf download prism-ml/Ternary-Bonsai-2-$s-mlx-2bit --local-dir Ternary-Bonsai-2-$s-mlx-2bit; done
+python3 -m venv ~/models/mlx-venv && ~/models/mlx-venv/bin/pip install "mlx-vlm>=0.7.8"
+```
+Run the server (offline OK):
+```bash
+~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-9B-mlx-2bit --host 127.0.0.1 --port 1234
+```
+- Thinking is off by default (`--enable-thinking` turns it on). Send sampler params per request; non-thinking: `temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.5`.
+- Sizes on disk: 2B 1.2 GB, 4B 1.9 GB, 9B 3.5 GB. All are vision models (needed for drawing labels).
+- Fallback for non-Mac / llama.cpp: `prism-ml/Ternary-Bonsai-2-*-gguf`.
 
 ## Conventions
 - Python: type hints, Pydantic v2, keep endpoints in `main.py` until it hurts.
