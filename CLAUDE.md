@@ -7,7 +7,7 @@ Sketch2Game is an offline, AI-powered 2D platformer maker. The user draws a leve
 
 ## Hard constraints
 - **Runs with Wi-Fi off.** No CDN links, no cloud APIs, no fonts/images from the web. Phaser is bundled at `frontend/vendor/phaser.min.js`.
-- **Models: Bonsai 2 only**, via a local OpenAI-compatible server (LM Studio or llama.cpp `server`). Two models, set by env vars:
+- **Models: Bonsai 2 only**, via a local OpenAI-compatible server (we use `mlx_vlm.server`; LM Studio / llama.cpp also fine). Two models, set by env vars:
   - `CODE_MODEL` (default Bonsai 2 9B): level patches and mechanics code.
   - `FAST_MODEL` (default Bonsai 2 2B): conversational replies and simple classification (incl. drawing labels, see plan.md).
   - Log which model handled each request and its latency (backend log + side panel).
@@ -20,12 +20,47 @@ Sketch2Game is an offline, AI-powered 2D platformer maker. The user draws a leve
 - Don't build items listed under "Later" in plan.md unless asked.
 
 ## Workflow (both sessions)
-1. Start of every session: `git checkout main && git pull`, then read `plan.md`.
-2. Work on a short-lived branch per task (e.g. `feat/runtime`, `feat/patches`). Claim the task in plan.md's "In progress" section with owner and branch name (commit that claim to main and push, so the other session sees it).
-3. Stay inside the files your task needs; don't edit files the other person has claimed.
-4. Keep PRs small. Open a PR (`gh pr create`) when the task works end to end; the other person's Claude session reviews it before merge. Prioritize reviewing open PRs quickly so nobody is blocked; check `gh pr list` at session start.
-5. After merging, update plan.md on main (check off, clear "In progress", log decisions, known issues, refresh "Next up").
-6. Update this file whenever architecture, file map, schema, or run instructions change.
+- Start of every session: `git checkout main && git pull`, read `plan.md`, and check `gh pr list` for PRs waiting on your review.
+- Stay inside the files your task needs; don't edit files the other person has claimed.
+- Update this file whenever architecture, file map, schema, or run instructions change.
+- Details: see "Git workflow" below.
+
+## Git workflow
+
+Setup (once): make sure `gh` (GitHub CLI) is installed and logged in.
+
+Starting a task:
+1. `git checkout main && git pull`
+2. `git checkout -b feat/<short-name>`
+3. Claim it in plan.md "In progress" with owner and branch, commit that on the branch.
+
+While working:
+- Commit whenever something works, even partially. Small commits with clear messages ("add patch validation", "fix enemy stomp hitbox").
+- Push the branch at least every hour so work is never only on one laptop: `git push -u origin feat/<short-name>`
+- If main has moved and you touch the same files, rebase early: `git fetch && git rebase origin/main`
+
+Opening a PR:
+- Open it when the feature works end to end, even if rough: `gh pr create --fill`
+- PR description: what changed, how to test it (exact commands or clicks), anything half-done.
+- Keep PRs under a few hundred lines when possible. Split big features.
+
+Reviewing the other person's PR:
+- `gh pr checkout <number>`, run it, try the test steps.
+- Check for: anything that breaks the sample level, network calls, model-written code outside mechanics.js, files that shouldn't be committed.
+- Approve or leave short comments: `gh pr review <number> --approve` (or `--comment -b "..."`)
+- Review within ~15 minutes. If the reviewer is unavailable for 20+ minutes and the change is small and tested, the author may merge it and say so in plan.md.
+
+Merging:
+- `gh pr merge <number> --squash --delete-branch`
+- Then on main: update plan.md (check off the task, clear "In progress", refresh "Next up"), commit, push.
+- After the other person merges, pull main before starting anything new.
+
+Never commit:
+- Model weights, the mlx-venv, `__pycache__`, level version history files, `.env` files. Keep these in `.gitignore`.
+
+Conflicts:
+- plan.md conflicts are expected; keep both sides' entries.
+- For code conflicts, the person rebasing resolves them and reruns the game before pushing.
 
 ## Architecture
 ```

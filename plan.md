@@ -16,7 +16,7 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 ## In progress
 | Task | Owner | Branch | Files touched |
 |---|---|---|---|
-| — | — | — | — |
+| 2. Level editing with model | Ashwin | `feat/patches` | backend/llm.py, backend/main.py, backend/patcher.py, backend/prompts.py, frontend/index.html, frontend/game.js, frontend/panel.js |
 
 ## Decisions log
 | Time | Decision | Reason |
@@ -43,9 +43,11 @@ Offline AI platformer maker. Demo (Wi-Fi off): draw a rough level → it becomes
 - Behavior errors currently only disable that behavior + log; report/rollback is feature 3.
 
 ## Next up
-1. Feature 2 (`feat/patches`): `backend/llm.py` (OpenAI-compatible client, `chat(model, ...)` returns text + model + latency; JSON-schema response format with fallback parse) + `POST /api/command {text, source}` using CODE_MODEL with validate/retry ×2
-2. Feature 2: patch apply + version history + undo endpoint; command box, log, model + latency in side panel
-3. Feature 4 (`feat/draw`) can start in parallel (frontend/draw.js only) since it reuses the patch pipeline
+Unclaimed. Teammate: pick one.
+1. **Argmax speech setup** (`feat/voice-setup`): install and run Argmax's local transcription server and confirm it transcribes a mic clip offline. Then wire a mic button that sends audio to it and passes the transcript to `POST /api/command` with `source: "voice"`. Moved up from Later.
+2. **Feature 4: canvas drawing** (`feat/draw`): new `frontend/draw.js`. Pen, group strokes, snap bounding boxes to tiles, label by pen color first, vision labeling after. Output goes in as an `add` patch through the feature 2 pipeline.
+
+(Feature 2 is in progress on `feat/patches`. Feature 3 depends on it.)
 
 ## Later
 - Voice input via Argmax local transcription → same command pipeline (`source: "voice"`)
