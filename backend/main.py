@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config
+from . import config, traces
 from .pipeline import run_command
 from .schema import Level
 from .speech import SpeechError, transcribe as argmax_transcribe
@@ -129,6 +129,7 @@ class CommandOut(BaseModel):
     spoken: str
     reason: Optional[str]  # null when applied
     log: list[LogStep]
+    trace_id: Optional[str] = None  # snapshot in backend/data/traces/; flag it with POST /api/traces/{id}/flag
 
 
 @app.post("/api/command", response_model=CommandOut)
@@ -137,18 +138,49 @@ def command(cmd: CommandIn):
     player = cmd.player.model_dump() if cmd.player else None
     with lock:
         level = _current()
+        trace = traces.new_trace(text, cmd.source, player, "sample", versions[-1]["version"], level.model_dump())
         if not text:
             r = {"ok": False, "status": "error", "route": "level", "model": "", "latency_ms": 0, "patch": [],
                  "level": level.model_dump(), "spoken": "I didn't catch that.", "reason": "Empty command.", "log": []}
         else:
-            r = run_command(level, text, config.CODE_MODEL, player)
+            try:
+                r = run_command(level, text, config.CODE_MODEL, player, trace)
+            except Exception as e:  # record harness crashes too, then let FastAPI return the 500
+                trace["outcome"] = {"status": "crash", "reason": f"{type(e).__name__}: {e}"}
+                traces.save(trace)
+                raise
         version = versions[-1]["version"]
         if r["status"] == "applied":
             version = _push(Level.model_validate(r["level"]), f"[{cmd.source}] {text}",
-                            {"command": cmd.model_dump(), "patch": r["patch"], "log": r["log"]})
+                            {"command": cmd.model_dump(), "patch": r["patch"], "log": r["log"], "trace_id": trace["id"]})
+        trace["version_after"] = version
+        trace["outcome"] = trace.get("outcome") or {"status": r["status"], "spoken": r["spoken"], "reason": r["reason"]}
+        traces.save(trace)
         log.info("command=%r status=%s route=%s model=%s latency_ms=%s ops=%d", text, r["status"], r["route"], r["model"],
                  r["latency_ms"], len(r["patch"]))
-        return CommandOut(version=version, **r)
+        return CommandOut(version=version, trace_id=trace["id"], **r)
+
+
+# ---------- traces (debugging the harness; see backend/traces.py) ----------
+@app.get("/api/traces")
+def list_traces(limit: int = 50, failures: bool = False):
+    return {"traces": traces.recent(limit, failures)}
+
+
+@app.get("/api/traces/{tid}")
+def get_trace(tid: str):
+    t = traces.load(tid)
+    return t if t else JSONResponse({"detail": "no such trace"}, status_code=404)
+
+
+class FlagIn(BaseModel):
+    note: str = ""
+
+
+@app.post("/api/traces/{tid}/flag")
+def flag_trace(tid: str, req: FlagIn):
+    t = traces.flag(tid, req.note.strip())
+    return traces.summary(t) if t else JSONResponse({"detail": "no such trace"}, status_code=404)
 
 
 # ---------- POST /api/transcribe ----------
