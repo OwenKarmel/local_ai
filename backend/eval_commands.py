@@ -61,7 +61,6 @@ CASES = [
     ("make the level harder", None, None),  # judged by hand; reported as ops
     ("make the level a bit easier", None, None),
     ("lower the gravity", None, lambda b, a: a.physics.gravity < b.physics.gravity),
-    ("give me fireballs", None, lambda b, a: a.abilities.get("fireball", {}).get("enabled") is True),
     ("add an enemy right in front of me", P5, lambda b, a: len(_new(b, a, "enemy")) == 1 and all(P5["x"] + 1 <= e.x <= P5["x"] + 6 for e in _new(b, a, "enemy"))),
     ("make this harder", P18, _ahead(P18["x"])),
 ]

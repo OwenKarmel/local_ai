@@ -17,7 +17,6 @@ OPERATIONS
 - {"op":"remove","id":"enemy2"}
 - {"op":"set_property","id":"enemy1","key":"speed","value":90}  enemy keys: speed, range (patrol distance in tiles)
 - {"op":"set_physics","key":"gravity","value":900}  keys: gravity (default 1200), jump_velocity (560), run_speed (200)
-- {"op":"set_ability","ability":"fireball","settings":{"enabled":true}}  optional settings: speed, cooldown_ms, bounces
 - {"op":"unsupported","reason":"..."}  ONLY if the command asks for something none of the operations above can do
 
 REGIONS: start, middle, end, or a platform id. While the PLAYER line is present, also:
@@ -28,7 +27,6 @@ RULES
 - Sensible, modest changes: "a bit" = 1 tile or about 15%; "bigger"/"more"/"lower" = 1-2 tiles or about 25%; "a lot" = 3 tiles or about 50%.
 - Plural ("the gaps", "the enemies") means one op for EACH matching id. Use at most 6 ops.
 - Gap size: ALWAYS use widen_gap (positive = bigger, negative = smaller). shrink_platform is only for "make a platform smaller/bigger".
-- Harder: wider gaps (+1), more or faster enemies, spikes. Easier: narrower gaps (negative widen_gap), slower or fewer enemies, remove hazards.
 - While the player is playing, "this", "here", "in front of me", "ahead", "next", and "make it harder/easier" mean what is AHEAD of the player (items marked [ahead], the next gap, region "ahead"). Never edit things [behind the player] for these.
 
 Reply with ONLY JSON: {"explanation": "<one short sentence>", "ops": [ ... ]}"""
@@ -48,22 +46,20 @@ _EX_LEVEL = {
     ],
 }
 _EX_PLAYER = {"x": 13, "y": 12, "has_double_jump": False}
-EXAMPLES = [
-    ("make the gaps a lot bigger and put an enemy near the end", None, {
-        "explanation": "Both gaps widened by 3 tiles and one enemy added near the end.",
+EXAMPLES = [  # must not match demo commands (see CLAUDE.md core principle)
+    ("narrow the second gap a little and scatter three coins in the middle", None, {
+        "explanation": "gap2 narrowed by 1 tile and three coins added in the middle.",
         "ops": [
-            {"op": "widen_gap", "gap_id": "gap1", "tiles": 3},
-            {"op": "widen_gap", "gap_id": "gap2", "tiles": 3},
-            {"op": "add_enemy", "region": "end", "count": 1, "speed": 60},
+            {"op": "widen_gap", "gap_id": "gap2", "tiles": -1},
+            {"op": "add_coins", "region": "middle", "count": 3},
         ],
     }),
-    ("make this harder and give me fireballs", _EX_PLAYER, {
-        "explanation": "Next gap wider, two fast enemies ahead, spikes on the platform ahead, fireballs on.",
+    ("put a couple of coins in front of me, slow that enemy down, and make me sparkle", _EX_PLAYER, {
+        "explanation": "Two coins ahead of the player, enemy slowed. Sparkling isn't something these ops can do.",
         "ops": [
-            {"op": "widen_gap", "gap_id": "gap2", "tiles": 1},
-            {"op": "add_enemy", "region": "ahead", "count": 2, "speed": 90},
-            {"op": "add_hazard_near", "platform_id": "g3", "kind": "spikes", "width": 1, "side": "auto"},
-            {"op": "set_ability", "ability": "fireball", "settings": {"enabled": True}},
+            {"op": "add_coins", "region": "near_player", "count": 2},
+            {"op": "set_property", "id": "e1", "key": "speed", "value": 40},
+            {"op": "unsupported", "reason": "make the player sparkle"},
         ],
     }),
 ]
