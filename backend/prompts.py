@@ -1,89 +1,75 @@
-"""Prompts for the level-patch model. Keep examples in sync with schema.py."""
+"""Prompts for the level-edit model (intent format). Examples are built from summary_text so they always match."""
 import json
 
-PATCH_SYSTEM = """You edit levels for a 2D side-scrolling platformer. You never rewrite the whole level. You return a PATCH: a short list of operations.
+from .summary import summary_text
 
-LEVEL FORMAT (all units are tiles; x grows right, y grows DOWN; y=0 is the top row, y=height-1 is the bottom row)
-- Each entity: {"id", "type", "x", "y", "w", "h", "behaviors", "props"}. (x,y) is the top-left tile; w,h are size in tiles.
-- type is one of: platform, spikes, lava, enemy, coin, double_jump, goal.
-- Ground is platforms along the bottom (y=13, h=2 in a 15-tall level). A GAP is empty space between two ground platforms. Things stand ON a platform when their y = platform.y - 1.
-- Enemies normally have "behaviors": ["patrol"] and "props": {"speed": 60, "range": 3}.
-- Everything must stay inside the level: x + w <= width, y + h <= height. ids must be unique.
+INTENT_SYSTEM = """You edit levels for a 2D side-scrolling platformer by choosing high-level edit operations.
+You never write coordinates: the game engine works out exact positions and keeps everything inside the level.
 
-KEEP IT PLAYABLE
-- The player can jump across gaps of at most 5 tiles and up about 3 tiles. "Bigger"/"wider" means +1 or +2 tiles, never more than 5 total.
-- Change only what the command asks for. Keep the player's start (left) and the goal (right) on solid ground.
-- If you move or shrink a platform, also move anything standing on it (spikes, enemies, coins, goal) so nothing ends up floating over a gap.
+You get a LEVEL SUMMARY (ground platforms, gaps, floating platforms, objects, each with an id) and a COMMAND.
 
 OPERATIONS
-- {"op": "add", "entity": {...full entity with a NEW unique id...}}
-- {"op": "remove", "id": "..."}
-- {"op": "move", "id": "...", "x": int, "y": int}            (new top-left position)
-- {"op": "set", "id": "...", "key": "w"|"h"|"x"|"y"|"type"|"behaviors"|"props.<name>", "value": ...}
-- {"op": "set_physics", "key": "gravity"|"jump_velocity"|"run_speed", "value": number}
-Ops apply in order.
+- {"op":"widen_gap","gap_id":"gap1","tiles":2}  make a gap wider (negative = narrower; minus its width closes it)
+- {"op":"shrink_platform","id":"plat1","tiles":1,"side":"both"}  make a platform narrower (negative = wider). side: left, right, both
+- {"op":"add_enemy","region":"end","count":2,"speed":60}  region: start, middle, end, or a platform id. Normal speed 60, fast 100+
+- {"op":"add_hazard_near","platform_id":"ground2","kind":"spikes","width":1,"side":"auto"}  spikes or lava on top of that platform, near an edge
+- {"op":"add_coins","region":"middle","count":3}
+- {"op":"remove","id":"enemy2"}
+- {"op":"set_property","id":"enemy1","key":"speed","value":90}  enemy keys: speed, range (patrol distance in tiles)
+- {"op":"set_physics","key":"jump_velocity","value":640}  keys: gravity, jump_velocity, run_speed
 
-Reply with ONLY a JSON object: {"explanation": "<one short sentence>", "ops": [ ... ]}. No markdown, no extra text."""
+RULES
+- Use only ids that appear in the summary.
+- Do what the command asks with a sensible, modest change: "a bit" = 1 tile or about 15%; "bigger"/"more" = 1-2 tiles or about 30%; "a lot" = 3 tiles or about 60%.
+- Plural ("the gaps", "the enemies") means one op for EACH matching id in the summary.
+- "Near the end/start/middle" means that region.
 
-# Few-shot examples on a tiny level so they don't leak ids from the real one.
+Reply with ONLY JSON: {"explanation": "<one short sentence>", "ops": [ ... ]}"""
+
 _EX_LEVEL = {
-    "width": 30, "height": 15,
+    "name": "example", "tile_size": 32, "width": 30, "height": 15,
     "physics": {"gravity": 1200, "jump_velocity": 560, "run_speed": 200},
-    "spawn": {"x": 1, "y": 11},
+    "spawn": {"x": 1, "y": 12},
     "entities": [
-        {"id": "g1", "type": "platform", "x": 0, "y": 13, "w": 10, "h": 2},
-        {"id": "g2", "type": "platform", "x": 12, "y": 13, "w": 18, "h": 2},
-        {"id": "c1", "type": "coin", "x": 5, "y": 10},
-        {"id": "goal", "type": "goal", "x": 28, "y": 11, "w": 1, "h": 2},
+        {"id": "g1", "type": "platform", "x": 0, "y": 13, "w": 10, "h": 2, "behaviors": [], "props": {}},
+        {"id": "g2", "type": "platform", "x": 12, "y": 13, "w": 8, "h": 2, "behaviors": [], "props": {}},
+        {"id": "g3", "type": "platform", "x": 22, "y": 13, "w": 8, "h": 2, "behaviors": [], "props": {}},
+        {"id": "p1", "type": "platform", "x": 14, "y": 9, "w": 3, "h": 1, "behaviors": [], "props": {}},
+        {"id": "e1", "type": "enemy", "x": 15, "y": 12, "w": 1, "h": 1, "behaviors": ["patrol"], "props": {"speed": 60, "range": 2}},
+        {"id": "c1", "type": "coin", "x": 15, "y": 8, "w": 1, "h": 1, "behaviors": [], "props": {}},
+        {"id": "goal", "type": "goal", "x": 28, "y": 11, "w": 1, "h": 2, "behaviors": [], "props": {}},
     ],
 }
 EXAMPLES = [
-    ("add two enemies on the second ground section and make jumping a bit higher", {
-        "explanation": "Two patrolling enemies on g2 and a higher jump.",
+    ("make the gaps a lot bigger and put an enemy near the end", {
+        "explanation": "Both gaps widened by 3 tiles and one enemy added in the end region.",
         "ops": [
-            {"op": "add", "entity": {"id": "enemy_a1", "type": "enemy", "x": 16, "y": 12, "behaviors": ["patrol"], "props": {"speed": 60, "range": 3}}},
-            {"op": "add", "entity": {"id": "enemy_a2", "type": "enemy", "x": 22, "y": 12, "behaviors": ["patrol"], "props": {"speed": 60, "range": 3}}},
-            {"op": "set_physics", "key": "jump_velocity", "value": 640},
+            {"op": "widen_gap", "gap_id": "gap1", "tiles": 3},
+            {"op": "widen_gap", "gap_id": "gap2", "tiles": 3},
+            {"op": "add_enemy", "region": "end", "count": 1, "speed": 60},
         ],
     }),
-    ("make the gap wider", {
-        "explanation": "Gap between g1 and g2 widened from 2 to 4 tiles by shrinking g1 and moving g2 right.",
+    ("make the enemies faster, get rid of the coin, and add spikes on the floating platform", {
+        "explanation": "Enemy sped up, coin removed, spikes added on p1.",
         "ops": [
-            {"op": "set", "id": "g1", "key": "w", "value": 9},
-            {"op": "move", "id": "g2", "x": 13, "y": 13},
-            {"op": "set", "id": "g2", "key": "w", "value": 17},
+            {"op": "set_property", "id": "e1", "key": "speed", "value": 90},
+            {"op": "remove", "id": "c1"},
+            {"op": "add_hazard_near", "platform_id": "p1", "kind": "spikes", "width": 1, "side": "auto"},
         ],
     }),
 ]
 
 
-def level_for_prompt(level: dict) -> str:
-    """Compact JSON, one entity per line: short but readable for a small model."""
-    head = {k: level[k] for k in ("width", "height", "physics", "spawn")}
-    lines = [json.dumps(head, separators=(",", ":"))[:-1] + ',"entities":[']
-    lines += ["  " + json.dumps(e, separators=(",", ":")) + "," for e in level["entities"]]
-    lines[-1] = lines[-1].rstrip(",")
-    lines.append("]}")
-    return "\n".join(lines)
-
-
-def _strip(level: dict) -> dict:
-    out = {k: v for k, v in level.items() if k not in ("name", "tile_size")}
-    out["entities"] = [
-        {k: v for k, v in e.items() if not (k in ("behaviors", "props") and not v) and not (k in ("w", "h") and v == 1)}
-        for e in level["entities"]
-    ]
-    return out
-
-
-def patch_messages(level: dict, command: str) -> list[dict]:
-    msgs = [{"role": "system", "content": PATCH_SYSTEM}]
+def intent_messages(level: dict, command: str) -> list[dict]:
+    msgs = [{"role": "system", "content": INTENT_SYSTEM}]
     for cmd, patch in EXAMPLES:
-        msgs.append({"role": "user", "content": f"LEVEL:\n{level_for_prompt(_EX_LEVEL)}\n\nCOMMAND: {cmd}"})
+        msgs.append({"role": "user", "content": f"LEVEL SUMMARY:\n{summary_text(_EX_LEVEL)}\n\nCOMMAND: {cmd}"})
         msgs.append({"role": "assistant", "content": json.dumps(patch)})
-    msgs.append({"role": "user", "content": f"LEVEL:\n{level_for_prompt(_strip(level))}\n\nCOMMAND: {command}"})
+    msgs.append({"role": "user", "content": f"LEVEL SUMMARY:\n{summary_text(level)}\n\nCOMMAND: {command}"})
     return msgs
 
 
-def repair_message(errors: str) -> dict:
-    return {"role": "user", "content": f"That patch was rejected:\n{errors}\n\nReturn a corrected patch as ONLY the JSON object."}
+def retry_message(errors: list[str]) -> dict:
+    lines = "\n".join(f"- {e}" for e in errors)
+    return {"role": "user", "content": f"Some of those operations could not be applied:\n{lines}\n\n"
+                                       "Return the whole corrected JSON object (all ops, fixed), nothing else."}
