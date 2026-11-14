@@ -73,8 +73,8 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 ## File map
 | Path | What it does |
 |---|---|
-| `backend/main.py` | FastAPI app: serves `frontend/`, version stack, all `/api/*` endpoints. Endpoints marked `STUB: replaced by <task ID>` return canned responses |
-| `backend/schema.py` | Pydantic models: `Level` (with `abilities`), `Entity`, `Physics`; older patch-op models used by `feat/patches` |
+| `backend/main.py` | FastAPI app: serves `frontend/`, version stack, all `/api/*` endpoints. `/api/transcribe` and `/api/speak` are still `STUB`s |
+| `backend/schema.py` | Pydantic models: `Level` (with `abilities`), `Entity`, `Physics`, `LowLevelOp` |
 | `backend/config.py` | Env-var config: `BONSAI_BASE_URL`, `FAST_BASE_URL`, `CODE_MODEL`, `FAST_MODEL`, `ARGMAX_URL` |
 | `backend/levels/sample.json` | Handwritten sample level, 40×15, 4 coins (must always work) |
 | `backend/requirements.txt` | Python deps |
@@ -83,7 +83,14 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `frontend/mechanics.js` | Behavior registry (`patrol`). The only file model-written code may go in |
 | `frontend/vendor/phaser.min.js` | Phaser 3.80.1, bundled locally |
 
-On `feat/patches` (PR #1, not merged): `backend/llm.py`, `summary.py`, `intents.py`, `patcher.py`, `pipeline.py`, `prompts.py`, `eval_commands.py`.
+| `backend/llm.py` | Client for the local model server; logs model + latency |
+| `backend/summary.py` | Level analysis + the text summary the model sees (ground, gaps, platforms, objects, regions, player) |
+| `backend/intents.py` | High-level ops the model emits (widen_gap, add_enemy, set_ability, …), id-restricted JSON schema, compiler to coordinates |
+| `backend/patcher.py` | `Editor` (working copy + automatic fixes), `diff_levels` (old vs new → LowLevelOps), `apply_low_level` |
+| `backend/pipeline.py` | `run_command(level, text, model, player)`: prompt → model → intents → fixes → validate → contract response. Max 1 model retry |
+| `backend/prompts.py` | System prompt + 2 worked examples |
+| `backend/stub_commands.py` | Canned keyword responses for `/api/command` when `STUB_COMMANDS=1` |
+| `backend/eval_commands.py` | `python -m backend.eval_commands --models 4B`: success, latency and tok/s per model |
 
 ## Contracts
 The source of truth is **plan.md → "Interface contracts"**: `/api/transcribe`, `/api/command`, `LowLevelOp`, `/api/speak`, `/api/level`, `/api/undo`, and what each stub returns.
@@ -127,7 +134,7 @@ for s in 2B 4B 9B; do ~/models/mlx-venv/bin/hf download prism-ml/Ternary-Bonsai-
 cd -
 
 # 5. Model server (separate terminal; works offline)
-~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-9B-mlx-2bit --host 127.0.0.1 --port 1234
+~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit --host 127.0.0.1 --port 1234
 
 # 6. Backend (separate terminal, from the repo root)
 source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000
@@ -135,7 +142,9 @@ source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000
 # 7. Open the game
 open http://localhost:8000
 ```
-No `.env` needed. Check with `curl localhost:8000/api/health`. Try a stub: `curl -s localhost:8000/api/command -H 'Content-Type: application/json' -d '{"text":"lower the gravity","source":"typed","speaker":null}'`.
+No `.env` needed. Check with `curl localhost:8000/api/health`. Try a command: `curl -s localhost:8000/api/command -H 'Content-Type: application/json' -d '{"text":"lower the gravity","source":"typed","speaker":null,"player":null}'`.
+
+**No model server?** Start the backend with `STUB_COMMANDS=1 uvicorn backend.main:app --reload --port 8000`. `/api/command` then returns canned keyword responses (plan.md → "Stubs").
 
 Argmax setup (WhisperKit server, TTSKit, SpeakerKit): Owen documents the commands here as O1, O4 and O5 land.
 
@@ -146,8 +155,9 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py`
 |---|---|
 | `BONSAI_BASE_URL` | `http://localhost:1234/v1` |
 | `FAST_BASE_URL` | same as `BONSAI_BASE_URL`. Point it at a second `mlx_vlm.server` (e.g. port 1235, loaded with the 2B) to keep both models in memory |
-| `CODE_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-9B-mlx-2bit` (level route) |
-| `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-2B-mlx-2bit` (routing, fast route) |
+| `CODE_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit` (level route) |
+| `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit` (fast route, A4). Same model on purpose: one server, no swapping |
+| `STUB_COMMANDS` | unset. `1` = `/api/command` returns canned keyword responses, no model server needed |
 | `BONSAI_MODELS_DIR` | `~/models/prism-ml` (base for the two defaults above) |
 | `ARGMAX_URL` | `http://localhost:50060/v1` (placeholder; Owen confirms in O1) |
 

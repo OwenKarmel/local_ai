@@ -34,7 +34,8 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 - `speaker` is `null` until SpeakerKit chaos mode (O5) exists; then `"player"`, `"friend"`, or an enrolled name.
 
 ### `POST /api/command`
-- Request: `{ "text": string, "source": "typed" | "voice", "speaker": string | null }`
+- Request: `{ "text": string, "source": "typed" | "voice", "speaker": string | null, "player": { "x": number, "y": number, "has_double_jump": boolean } | null }`
+- `player`: the tile containing the player's center (x right, y down), or `null` when not playing. The backend uses it for "near_player", "ahead of me", "the next gap" and "make this harder": while playing, edits land ahead of the player and things fully behind the player are left alone.
 - Response:
 ```
 {
@@ -51,7 +52,9 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
   "log": [ { "step": string, "model": string | null, "latency_ms": number, "errors": string[], "repairs": string[] } ]
 }
 ```
-- `log.step` is one of `"route"`, `"model"`, `"convert"`, `"check"`. `model` is `null` for steps with no model call.
+- `log.step` is one of `"route"`, `"model"`, `"convert"`, `"check"`. `model` is `null` for steps with no model call. `convert.repairs` lists automatic fixes; `convert.errors` lists what couldn't be applied.
+- `patch` is computed as the difference between the old and new level, so it is exactly what was applied: removes first, then updates, then adds, then physics and abilities.
+- Until the playability checker (A5) exists, `"refused"` is used only when the request can't be expressed with the edit operations (e.g. "make me invisible"). `reason` and `spoken` say so.
 
 ### `LowLevelOp` (the frontend must apply each of these live)
 - `{ "op": "set_physics", "key": "gravity" | "jump_velocity" | "run_speed", "value": number }`
@@ -67,12 +70,12 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 
 ### Unchanged
 - `GET /api/level` → `Level` (schema in CLAUDE.md; now has an optional `abilities` object).
-- `POST /api/undo` → `{ "ok": boolean, "version": number, "message": string }`. Then re-fetch `GET /api/level`.
+- `POST /api/undo` → `{ "ok": boolean, "version": number, "level": Level }`. `ok` is false when there is nothing to undo (then `level` is the current level). Apply `level` directly; no re-fetch needed.
 - `POST /api/level/reset` → `Level`. `GET /api/history` → `{ "current": number, "versions": [ { "version": number, "label": string, "time": "HH:MM:SS" } ] }`. `GET /api/health` → config info.
 
-### Stubs on main
-Every one is marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
-- `/api/command` returns canned responses by keyword in `text`, checked in this order:
+### Stubs
+Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
+- `/api/command` is real (needs the model server). **With `STUB_COMMANDS=1` it returns canned responses instead** (`backend/stub_commands.py`), by keyword in `text`, checked in this order:
 
 | Text contains | Result |
 |---|---|
@@ -82,17 +85,12 @@ Every one is marked `STUB: replaced by <task ID>` in `backend/main.py`. No model
 | "remove" | `applied`, `remove_entity` of the first enemy (`refused` if none left) |
 | "faster" | `applied`, `update_entity` on every enemy (`props.speed` +40) |
 | "gap" | `applied`, `update_entity` on `ground2` (first gap one tile wider) |
-| "enemy" | `applied`, `add_entity` enemy at x 8, then 19, 26, 36 on repeat calls |
+| "enemy" | `applied`, `add_entity` enemy 3 tiles ahead of `player`, or at x 8, then 19, 26, 36 without a player |
 | anything else | `error` |
 
-  The stub really applies its ops to an in-memory level, so `level`, `version`, `GET /api/level` and undo stay consistent. It sleeps 0.6 s (fast) or 2 s (level) so "thinking" UI can be tested. The real level route currently takes 9 to 15 s.
+  The stub really applies its ops to the in-memory level, so `level`, `version`, `GET /api/level` and undo stay consistent. It sleeps 0.6 s (fast) or 2 s (level) so "thinking" UI can be tested. The real command takes 9 to 25 s on the 4B.
 - `/api/transcribe` returns `"lower the gravity"`, `speaker: null`.
 - `/api/speak` returns a 0.25 s beep wav; pitch differs per style.
-- `/api/undo` and `/api/history` work against the stub's version stack.
-
-### Open contract questions (not in the contract yet; need a decision)
-- **Player position.** "Next gap", "ahead of me", "near_player" and "make this harder" need to know where the player is, and the backend doesn't. Proposal: add `"player": { "x": number, "y": number, "has_double_jump": boolean } | null` (tile units) to the `/api/command` request. The checker also needs it to test reachability from where the player is standing, not only from spawn.
-- **Undo while playing.** `/api/undo` returns no level, so the frontend must re-fetch and reconcile live. Could return `level` like `/api/command` does.
 
 ## Task board
 Status: `todo`, `doing`, `in review`, `done`. Update when a PR opens or merges. Branch = lowercased task ID plus a short name (e.g. `a2-intent-ops`).
@@ -100,14 +98,14 @@ Status: `todo`, `doing`, `in review`, `done`. Update when a PR opens or merges. 
 ### Ashwin (backend)
 | ID | Title | Pri | Depends on | Files | Done when | Status |
 |---|---|---|---|---|---|---|
-| A1 | Finish feat/patches PR 1: new `/api/command` shape, clear errors, deterministic fixes (clamp to bounds, nudge overlaps) before model retry, max 1 model retry | P0 | — | backend/ | "add three enemies near the end" applies and returns the full contract | in review as PR #1 (`feat/patches`); pipeline works, response shape is still the old contract |
-| A2 | Intent-level ops: level summary for the model (platforms, gaps, regions with ids and widths); ops like widen_gap, shrink_platform, add_enemy(region or near_player), add_hazard_near, set_physics, set_ability. Backend converts to LowLevelOps and keeps everything in bounds | P0 | A1 | backend/ | "make the gaps bigger" succeeds on first try and stays in bounds | mostly built in PR #1 (passes on 9B, 4B, 2B). Missing: LowLevelOp output names, set_ability, near_player |
+| A1 | Finish feat/patches PR 1: new `/api/command` shape, clear errors, deterministic fixes (clamp to bounds, nudge overlaps) before model retry, max 1 model retry | P0 | — | backend/ | "add three enemies near the end" applies and returns the full contract | in review as PR #1 (`feat/patches`): new contract, live 4B tests pass |
+| A2 | Intent-level ops: level summary for the model (platforms, gaps, regions with ids and widths); ops like widen_gap, shrink_platform, add_enemy(region or near_player), add_hazard_near, set_physics, set_ability. Backend converts to LowLevelOps and keeps everything in bounds | P0 | A1 | backend/ | "make the gaps bigger" succeeds on first try and stays in bounds | in review as PR #1: LowLevelOp names, set_ability, near_player/ahead regions done. 14/14 eval commands applied on the 4B, 12/12 checks |
 | A3 | Shared physics config: one file read by game.js and the checker (player size, double-jump strength, coyote time, jump buffer, jump cut, max fall speed, default gravity/jump/run) | P0 | heads-up to Owen | new shared file, backend/, small game.js change | changing jump velocity in the config changes the game and the checker | todo |
 | A4 | Command router: "fast" (settings, abilities) uses FAST_MODEL with a tiny prompt; "level" (geometry, entities) uses CODE_MODEL with the level summary | P0 | A1 | backend/ | "lower the gravity" returns in a few seconds on the fast route | todo |
 | A5 | Playability checker and refusals: tile grid, jump arcs matching real game physics (coyote time, variable jump), reachability from spawn with double-jump state, specific failure reasons, refusal through the contract. Runs on every patch, including physics changes. Verified against a test level with gaps 4/5/6/7 and heights 2/3/4 confirmed by hand in the game | P0 | A3 | backend/ | sample level passes, the 10-tile gap fails with a clear reason, checker answers match the hand test | todo |
 | A6 | Player abilities in the prompt: current reach (max gap, max height, with and without double jump) computed from the shared config, in every level-route prompt, plus safe ways to make levels harder | P0 | A3, A5 | backend/ | prompt shows correct numbers after a physics change | todo |
 | A7 | Speaker permissions for chaos mode: if speaker is "friend", allow only harder-making ops; refuse helpful ones with a spoken reason | P1 | O5, A5 | backend/ | friend's "remove the enemies" is refused out loud | todo |
-| A8 | Eval script and table: 20 commands across both routes; valid rate, refusal correctness, latency per model (2B, 4B, 9B); markdown table for the demo | P1 | A4, A5 | backend/ | table generated | started: 10-command version in PR #1 |
+| A8 | Eval script and table: 20 commands across both routes; valid rate, refusal correctness, latency per model (2B, 4B, 9B); markdown table for the demo | P1 | A4, A5 | backend/ | table generated | started: 14-command version in PR #1 (includes player-position cases) |
 | A9 | Fireball ability backend: schema for `abilities.fireball` (enabled, key, speed, cooldown_ms, bounces, kills) and ops support | P2 | A2 | backend/ | "give me fireballs" returns a valid set_ability | todo |
 
 ### Owen (frontend and voice)
@@ -157,6 +155,15 @@ Status: `todo`, `doing`, `in review`, `done`. Update when a PR opens or merges. 
 | 11-14 | New optional `FAST_BASE_URL` (defaults to `BONSAI_BASE_URL`) | One mlx_vlm.server holds one model; swapping costs about 4 s. A second server for the fast model avoids that |
 | 11-14 | Intent-format eval, 10 commands (from PR #1): 9B 10/10 applied, 8/8 correct, median 15.0 s. 4B 10/10, 8/8, 9.5 s. 2B 10/10, 6/8, 4.1 s | 4B matched 9B's accuracy at about 1.6× the speed. Open decision: make 4B the level-route model |
 | 11-14 | Stub `/api/command` applies its canned ops to a real in-memory level | `level`, `version` and undo stay consistent for frontend testing |
+| 11-14 15:00 | **`/api/command` request gains `player: {x, y, has_double_jump} \| null`** (tiles) | "near_player", "ahead of me", "the next gap" and "make this harder" need the player's position; the checker will need it too |
+| 11-14 15:00 | **One model for everything: the 4B for both routes on one server** (CODE_MODEL and FAST_MODEL default to the 4B). Routing code and FAST_BASE_URL stay, so the fast route can move to the 2B on a second server later | Earlier eval (10 commands): 4B 10/10 applied, 8/8 correct, median 9.5 s; 9B 10/10, 8/8, 15.0 s. Same accuracy at about 1.6× the speed, and no model swapping |
+| 11-14 15:00 | **`/api/undo` returns `{ok, version, level}`** | The frontend can apply undo live without a second request |
+| 11-14 15:00 | `patch` is a diff of old vs new level, not a log of edit steps | Always exactly what was applied, compact (one update per entity), in contract op names |
+| 11-14 15:00 | While playing, edits to things fully behind the player are skipped (logged as a repair) | The 4B sped up an enemy behind the player for "make this harder"; the code enforces "ahead" instead of trusting the prompt |
+| 11-14 15:00 | Spoken reply is built from what was actually applied, not from the model's text | It can't claim changes that didn't happen |
+| 11-14 15:00 | Model may return at most 6 ops (JSON schema `maxItems`); gap size always via widen_gap | "make the level harder" took 43 s with a long op list; "make the first gap smaller" picked the wrong op |
+| 11-14 15:00 | `STUB_COMMANDS=1` env var keeps the keyword stub available | Frontend work without a model server |
+| 11-14 15:00 | 4B eval with the new contract, 14 commands: 14/14 applied on the first model call, 12/12 intent checks, median 16.2 s (this run: decode 27 tok/s, prefill 219 tok/s, 2,207-token prompt). An earlier run of the same code minus the prompt fixes had a median of 12.0 s (37 and 287 tok/s); the Mac was slower on the second run | Accuracy is good; latency is the problem (see Known issues) |
 
 ## Dropped
 Kept in the repo for now; remove in a cleanup PR.
@@ -166,7 +173,9 @@ Kept in the repo for now; remove in a cleanup PR.
 - **Not on the board:** model-written behaviors in mechanics.js with rollback (the old "feature 3"). The rule that model-written code may only go in mechanics.js stays.
 
 ## Known issues
-- **Level-route latency is 9 to 15 s** with the game running. The player moves a long way in that time.
+- **Commands take 9 to 25 s on the 4B** (most of it reading a 2,200-token prompt). The player moves a long way in that time. Biggest wins: the fast route with a tiny prompt (A4), a shorter level prompt, prompt prefix caching.
+- Until A5, a command can still make the level unbeatable (e.g. "make this harder" can widen the next gap to 6).
+- `add_hazard_near` on a ground platform puts spikes one tile in from the landing edge; after a gap is widened, the spikes can end up on the first tile. Harsh but legal until the checker exists.
 - One mlx_vlm.server keeps only one model loaded; alternating fast and level routes swaps models (about 4 s each) unless `FAST_BASE_URL` points at a second server.
 - Nothing stops an unbeatable edit until A5 merges.
 - game.js hardcodes the jump constants (coyote 100 ms, jump buffer 100 ms, double jump 0.9×, jump cut 0.85, player 24×30, max fall 1200) until A3.
