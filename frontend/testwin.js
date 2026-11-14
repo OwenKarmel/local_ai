@@ -29,6 +29,7 @@
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const r = await res.json();
+      if (window.Sketch2Game_setLastTrace) window.Sketch2Game_setLastTrace(r.trace_id, text);
       const ms = Math.round(performance.now() - t0);
       add(r.status === "applied" ? "ok" : "error", `[${r.status}] ${r.spoken || ""}`);
       if (r.reason) add("info", "reason: " + r.reason);
