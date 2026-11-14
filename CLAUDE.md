@@ -83,6 +83,7 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `frontend/game.js` | Phaser scene: builds the level from JSON, player controls, collisions, win/death |
 | `frontend/mechanics.js` | Behavior registry (`patrol`). The only file model-written code may go in |
 | `frontend/vendor/phaser.min.js` | Phaser 3.80.1, bundled locally |
+| `testbonsai/` | Dev-only: run Bonsai 2 GGUF with llama.cpp (CUDA) + Open WebUI on a non-Mac machine (WSL2). Not part of the demo |
 
 | `backend/llm.py` | Client for the local model server; logs model + latency |
 | `backend/summary.py` | Level analysis + the text summary the model sees (ground, gaps, platforms, objects, regions, player) |
