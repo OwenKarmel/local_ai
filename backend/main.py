@@ -15,13 +15,15 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import Response
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config
 from .pipeline import run_command
 from .schema import Level
+from .speech import SpeechError, transcribe as argmax_transcribe
 from .stub_commands import run_stub
 
 log = logging.getLogger("api")
@@ -161,9 +163,17 @@ class TranscribeOut(BaseModel):
 
 @app.post("/api/transcribe", response_model=TranscribeOut)
 async def transcribe(audio: UploadFile = File(...)):
-    # STUB: replaced by O1 (forward to Argmax WhisperKit at ARGMAX_URL); speaker filled in by O5
-    await audio.read()
-    return TranscribeOut(text="lower the gravity", latency_ms=450, speaker=None)
+    """Forwards to the local Argmax server (ARGMAX_URL). STUB_SPEECH=1 returns fixed text (no Argmax needed).
+    On failure: HTTP 503 with {"detail": "..."}. speaker stays null until O5 (SpeakerKit)."""
+    data = await audio.read()
+    if config.STUB_SPEECH:
+        return TranscribeOut(text="lower the gravity", latency_ms=450, speaker=None)
+    try:
+        r = await run_in_threadpool(argmax_transcribe, data, audio.filename, audio.content_type)
+    except SpeechError as e:
+        log.warning("transcribe failed: %s", e)
+        return JSONResponse(status_code=503, content={"detail": str(e)})
+    return TranscribeOut(text=r["text"], latency_ms=r["latency_ms"], speaker=None)
 
 
 # ---------- POST /api/speak ----------

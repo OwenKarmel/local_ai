@@ -96,6 +96,7 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/patcher.py` | `Editor` (working copy + automatic fixes), `diff_levels` (old vs new → LowLevelOps), `apply_low_level` |
 | `backend/pipeline.py` | `run_command(level, text, model, player)`: prompt → model → intents → fixes → validate → contract response. Max 1 model retry |
 | `backend/prompts.py` | System prompt + 2 worked examples |
+| `backend/speech.py` | `/api/transcribe` helper: ffmpeg convert + pad, forward to the Argmax server |
 | `backend/stub_commands.py` | Canned keyword responses for `/api/command` when `STUB_COMMANDS=1` |
 | `backend/eval_commands.py` | `python -m backend.eval_commands --models 4B`: success, latency and tok/s per model |
 
@@ -140,6 +141,7 @@ py -3 -m venv .venv                       # or: python -m venv .venv
 .venv\Scripts\Activate.ps1                # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 pip install -r backend/requirements.txt
 $env:STUB_COMMANDS = "1"                  # canned /api/command responses, no model server
+$env:STUB_SPEECH = "1"                    # fixed /api/transcribe text, no Argmax
 uvicorn backend.main:app --reload --port 8000
 # new PowerShell window:
 start http://localhost:8000
@@ -151,9 +153,9 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/command -ContentTy
 git clone https://github.com/OwenKarmel/local_ai.git && cd local_ai
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
-STUB_COMMANDS=1 uvicorn backend.main:app --reload --port 8000     # then open http://localhost:8000
+STUB_COMMANDS=1 STUB_SPEECH=1 uvicorn backend.main:app --reload --port 8000     # then open http://localhost:8000
 ```
-- `/api/transcribe` and `/api/speak` are stubs on every machine until O1 and O4 land: fixed text, and a short beep wav.
+- Speech needs Argmax (Mac only). Also set `STUB_SPEECH=1` (PowerShell: `$env:STUB_SPEECH = "1"`) so `/api/transcribe` returns fixed text; without it, it returns HTTP 503. `/api/speak` is a stub (beep wav) until O4.
 - Without `STUB_COMMANDS=1`, `/api/command` tries the model server and returns `status: "error"` ("Model server not reachable").
 - No model server, Argmax, `~/models` folder or `.env` is needed.
 
@@ -196,7 +198,33 @@ No `.env` needed. Check with `curl localhost:8000/api/health`. Try a command: `c
 
 **No model server?** Start the backend with `STUB_COMMANDS=1 uvicorn backend.main:app --reload --port 8000`. `/api/command` then returns canned keyword responses (plan.md → "Stubs").
 
-Argmax setup (WhisperKit server, TTSKit, SpeakerKit): Ashwin documents the commands here as O1, O4 and O5 land.
+### Argmax setup (speech; macOS 14+, TTSKit needs 15+, Xcode 16+)
+Lives outside the repo in `~/argmax`. One-time, needs internet, about 3 GB (build 1.3 GB, Whisper models 740 MB, TTS model 1 GB):
+```bash
+mkdir -p ~/argmax && cd ~/argmax && git clone https://github.com/argmaxinc/argmax-oss-swift.git && cd argmax-oss-swift
+BUILD_ALL=1 swift build -c release --product argmax-cli          # about 3 min; BUILD_ALL=1 includes the server
+make download-model MODEL=large-v3-v20240930_626MB                # demo model (598 MB); also: MODEL=base.en (140 MB)
+rm -rf Models/whisperkit-coreml/.git/lfs/objects                  # optional: git-lfs keeps a duplicate copy of every model
+brew install ffmpeg                                               # backend uses it to convert/pad audio (see backend/speech.py)
+```
+`make setup` is not needed (it installs fastlane/xcbeautify for the iOS example apps).
+
+Run the speech-to-text server (separate terminal, works offline):
+```bash
+cd ~/argmax/argmax-oss-swift && .build/release/argmax-cli serve \
+  --model-path Models/whisperkit-coreml/openai_whisper-large-v3-v20240930_626MB --host 127.0.0.1 --port 50060 --language en
+```
+- The first start of a model compiles it for this Mac (about 1.5 min for large-v3); later starts take about 2 s.
+- Check: `curl -s localhost:8000/api/transcribe -F audio=@some.wav`, or straight to Argmax: `curl -s localhost:50060/v1/audio/transcriptions -F file=@some.wav -F model=whisper -F response_format=json`.
+- Server quirks (argmax-oss-swift `9f99b5c`): the `model` form field is required but ignored, and `temperature=0` returns HTTP 500 (`0.0` works). `backend/speech.py` handles both.
+- Whisper returns empty text for clips under about 1 s, so the backend pads audio to 2 s. It also converts webm/opus (what browsers record) to WAV.
+
+Text-to-speech (O4 will wrap this in `/api/speak`):
+```bash
+.build/release/argmax-cli tts --model 0.6b --text "Gravity lowered." --play                                   # speakers
+.build/release/argmax-cli tts --model 0.6b --text "Gravity lowered." --output-path out --output-format wav   # out.wav, 24 kHz
+```
+The 0.6b model (about 1 GB) downloads to `~/Documents/huggingface` on first use. Voices: `--speaker aiden|ryan|eric|dylan|serena|vivian|…`.
 
 Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py` only; after editing `sample.json`, restart the backend or use the Reset button.
 
@@ -209,7 +237,8 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py`
 | `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit` (fast route, A4). Same model on purpose: one server, no swapping |
 | `STUB_COMMANDS` | unset. `1` = `/api/command` returns canned keyword responses, no model server needed |
 | `BONSAI_MODELS_DIR` | `~/models/prism-ml` (base for the two defaults above) |
-| `ARGMAX_URL` | `http://localhost:50060/v1` (placeholder; Ashwin confirms in O1) |
+| `ARGMAX_URL` | `http://localhost:50060/v1` (`argmax-cli serve` default port) |
+| `STUB_SPEECH` | unset. `1` = `/api/transcribe` returns fixed text, no Argmax needed |
 
 Model notes:
 - Bonsai 2 MLX packs need **mlx-vlm ≥ 0.7.8**; released mlx-lm (and LM Studio's MLX engine) can't load them yet.

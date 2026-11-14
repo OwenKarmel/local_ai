@@ -33,6 +33,7 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 ### `POST /api/transcribe`
 - Request: multipart form, field `audio` = audio file.
 - Response: `{ "text": string, "latency_ms": number, "speaker": string | null }`
+- Accepts wav, m4a, mp3, flac and webm/opus (what browsers record); the backend converts and pads short clips. If Argmax is down: HTTP 503 `{ "detail": string }`. With `STUB_SPEECH=1`: fixed text.
 - `speaker` is `null` until SpeakerKit chaos mode (O5) exists; then `"player"`, `"friend"`, or an enrolled name.
 
 ### `POST /api/command`
@@ -106,7 +107,7 @@ Owen has no Mac and no loaner. He is working on an Acer laptop. All Mac-only wor
 |---|---|---|---|---|---|---|
 | A1 | Finish PR #1 contract conversion: new `/api/command` shape, clear errors, deterministic fixes before model retry, max 1 model retry | P0 | — | backend/ | "add three enemies near the end" applies and returns the full contract | done (PR #1 merged) |
 | A2 | Intent-level ops: level summary for the model; widen_gap, shrink_platform, add_enemy(region / near_player), add_hazard_near, set_physics, set_ability. Backend converts to LowLevelOps and keeps everything in bounds | P0 | A1 | backend/ | "make the gaps bigger" succeeds on first try and stays in bounds | done (PR #1 merged) |
-| O1 (was Owen's) | Argmax speech-to-text offline: WhisperKit via the Argmax local server; `/api/transcribe` forwards to it (`ARGMAX_URL`). Time-box 2 hours; escalate blockers to the Argmax team in Discord | P0 | — | backend/main.py, CLAUDE.md setup | a recorded clip returns correct text with Wi-Fi off | todo |
+| O1 (was Owen's) | Argmax speech-to-text offline: WhisperKit via the Argmax local server; `/api/transcribe` forwards to it (`ARGMAX_URL`). Time-box 2 hours; escalate blockers to the Argmax team in Discord | P0 | — | backend/main.py, CLAUDE.md setup | a recorded clip returns correct text with Wi-Fi off | in review (branch `o1-argmax`): server + `/api/transcribe` work offline-ready; mic and Wi-Fi-off checks pending |
 | O4 (was Owen's) | Copilot voice: `/api/speak` using TTSKit; `style` for refusals vs normal; pre-download the TTS model. Owen's frontend plays whatever `/api/speak` returns (the stub already returns wav) | P0 | — | backend/main.py, CLAUDE.md setup | the copilot speaks confirmations and refusals offline | todo |
 | A4 | Command router: "fast" (settings, abilities) gets a tiny prompt; "level" (geometry, entities) gets the level summary. Both use the 4B for now | P0 | A1 | backend/ | "lower the gravity" returns in a few seconds on the fast route | todo |
 | A6 | Player abilities in the prompt: current reach (max gap, max height, with and without double jump) computed from the shared config, in every level-route prompt, plus safe ways to make levels harder | P0 | A3, A5 | backend/ | prompt shows correct numbers after a physics change | todo |
@@ -188,6 +189,11 @@ def check(level: dict, player: dict | None) -> dict:
 | 11-14 15:10 | **Task split by machine:** Ashwin takes Mac-only work (O1, O4, A4, A6, J1, and recording J2/J3); Owen takes A3 (shared physics config) and A5 (playability checker) plus O2, O3, O6, O7. IDs kept, owners changed | Owen has no Mac. Argmax and Bonsai MLX only run on Apple silicon, and Ashwin's Mac is the demo machine. A3 and A5 are pure Python/JS and need no models |
 | 11-14 15:10 | Checker interface: `check(level, player) -> {ok, reason, spoken}` in `backend/checker.py` | Owen owns the checker, Ashwin owns the pipeline; a function boundary keeps them out of each other's files |
 | 11-14 15:20 | **New task A10: precomputed difficulty ladder** (Ashwin, P1). "Make this harder" / "make it easier" are answered from checker-verified steps prepared in the background, with no model call | These are the most common live commands and the demo's centerpiece. A model call takes 9–25 s; a stored step can apply in under 200 ms, and pre-verification means it can never make the level unbeatable |
+| 11-14 15:45 | Speech-to-text runs on `argmax-cli serve` (argmax-oss-swift, built from source) on port 50060; `/api/transcribe` forwards to it | Same OpenAI audio API we planned for; `ARGMAX_URL` default already matched |
+| 11-14 15:45 | Demo STT model: Whisper large-v3 626MB (about 0.8 s per command through the backend); base.en (about 0.1 s) as fallback | Both got 5/5 test commands right (synthetic `say` voice). large-v3 has better punctuation and should be more robust to real voices and room noise; 0.8 s is small next to the 9–25 s model step. Confirm with real voice |
+| 11-14 15:45 | Backend pads audio to 2 s and converts to 16 kHz WAV with ffmpeg | Whisper returned empty text for the 0.9 s "make this harder"; webm from browsers isn't readable by WhisperKit |
+| 11-14 15:45 | `STUB_SPEECH=1` keeps the fixed-text transcribe stub | Owen's Acer has no Argmax |
+| 11-14 15:45 | TTS: `argmax-cli tts --model 0.6b` can write WAV (24 kHz) or play; warm load 0.5 s, first audio 0.14 s, about real time. For `/api/speak` (O4), keep a long-running TTS process instead of one CLI call per sentence (about 7 s each) | Measured |
 | 11-14 15:30 | No loaner Mac for Owen; O5 (SpeakerKit) goes to Ashwin | Owen works on an Acer laptop; SpeakerKit needs Apple silicon |
 | 11-14 15:20 | **Contract: `route` gains the value `"ladder"`** in the `/api/command` response | Ladder answers aren't fast-route or level-route model calls; the HUD and eval should show them separately. The frontend should treat unknown route values as display-only. The backend type changes when A10 lands |
 
@@ -206,6 +212,6 @@ Kept in the repo for now; remove in a cleanup PR.
 - Nothing stops an unbeatable edit until A5 merges.
 - game.js hardcodes the jump constants (coyote 100 ms, jump buffer 100 ms, double jump 0.9×, jump cut 0.85, player 24×30, max fall 1200) until A3.
 - `Sketch2Game.loadLevel()` restarts the scene, losing position and score, until O3.
-- `ARGMAX_URL` default (`http://localhost:50060/v1`) is a placeholder; Ashwin confirms in O1.
-- Ashwin's Mac has about 6 GB of disk free.
+- Argmax server quirks: `model` form field required but ignored; `temperature=0` returns 500 (`0.0` works). Handled in `backend/speech.py`; worth reporting to Argmax.
+- Ashwin's Mac is very low on disk (about 3 GB free after Argmax). The TTS 1.7b model (about 2.5 GB) doesn't fit; use 0.6b.
 - The code still uses the working name `Sketch2Game` (page title, `window.Sketch2Game`). Rename once the final name is picked.
