@@ -9,6 +9,7 @@ Without ffmpeg, wav/m4a/mp3/flac/aiff/caf are sent as-is and anything else is an
 import logging
 import shutil
 import subprocess
+import tempfile
 import time
 
 import httpx
@@ -38,9 +39,13 @@ def to_wav(data: bytes) -> bytes:
     ff = shutil.which("ffmpeg")
     if not ff:
         raise SpeechError("Audio isn't wav/m4a/mp3/flac and ffmpeg isn't installed to convert it. Send WAV, or `brew install ffmpeg`.")
-    p = subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-ac", "1", "-ar", "16000",
-                        "-af", f"apad=whole_dur={MIN_SECONDS}", "-f", "wav", "pipe:1"],
-                       input=data, capture_output=True, timeout=30)
+    # Read from a temp file, not a pipe: Chrome's MediaRecorder webm needs seeking, so ffmpeg fails on pipe:0.
+    with tempfile.NamedTemporaryFile(suffix=".audio") as f:
+        f.write(data)
+        f.flush()
+        p = subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-i", f.name, "-ac", "1", "-ar", "16000",
+                            "-af", f"apad=whole_dur={MIN_SECONDS}", "-f", "wav", "pipe:1"],
+                           capture_output=True, timeout=30)
     if p.returncode != 0 or not p.stdout:
         raise SpeechError(f"Could not convert audio to WAV: {p.stderr.decode(errors='ignore')[:200]}")
     return p.stdout
