@@ -70,6 +70,8 @@ MECHANICS.boss = function (entity, scene, dt) {
 
   b.setVelocityX((phase === 2 ? p.phase2_speed ?? 140 : p.speed ?? 70) * s.dir);
   entity.setFlipX(s.dir > 0);
+};
+
 // ---------- Abilities (model-written) ----------
 // Each ability is an object registered by name:
 //   ABILITIES["name"] = { setup(scene) {...}, update(scene, dt) {...} }
