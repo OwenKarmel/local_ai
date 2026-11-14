@@ -1,10 +1,14 @@
 .venv/
 mlx-venv/
+models/
 __pycache__/
 *.pyc
 .DS_Store
 .env
 .env.*
+# level version history
 backend/data/
+# model weights
 *.safetensors
 *.gguf
+*.npz
