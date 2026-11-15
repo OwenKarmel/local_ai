@@ -341,6 +341,9 @@ def _region(ed: Editor, region: str, where: str) -> tuple[list[dict], tuple[int,
 
 
 def _spots(ed: Editor, plats: list[dict], lo: int, hi: int, min_w: int = 1) -> list[tuple[int, dict]]:
+    # While playing, nothing new goes behind the player (a left-to-right runner never sees it): start 2 tiles ahead.
+    if ed.player:
+        lo = max(lo, ed.player["x"] + 2)
     out = []
     for p in plats:
         if p["w"] < min_w or p["y"] - 1 < 0:
