@@ -66,8 +66,8 @@ LOOK OPERATIONS (visual only: never change gameplay; give only the fields you ne
   scale_y (height), alpha (1 solid, 0.4 see-through), flip_y (upside down), glow (glow/outline color),
   effects: pulse, spin, wobble, bob (float up and down), flicker, blink, rainbow (cycling colors), sparkle, trail,
   fade_far (faint until the player is near); ["none"] removes effects. reset: true = back to the default look.
-- {"op":"set_scene","sky":"#ffb36b","sky_bottom":"#7a4fd0","overlay":"#1a1040","overlay_alpha":0.3,"weather":["snow"]}
-  the whole screen. fields: sky, sky_bottom (gradient), scenery (false hides background hills/clouds), scenery_tint,
+- {"op":"set_scene","overlay":"#1a1040","overlay_alpha":0.3,"weather":["snow"]}
+  the whole screen. fields:
   overlay + overlay_alpha (0-0.8; color wash over everything: night, sunset, underwater, spooky),
   weather: rain, snow, leaves, stars, bubbles, embers, fog, clouds, confetti (replaces the current list; ["none"] clears),
   weather_color, filter: none, grayscale, sepia, negative, vintage, night_vision, hue_shift (-180..180 degrees),
@@ -92,7 +92,7 @@ RULES
 - Every op starts with "asked": the exact words of the command that this op carries out. If you can't quote words
   that ask for an op, leave that op out.
 - Write "plan" first: in a few words, what the command asks for and which operation does exactly that.
-- How something LOOKS (color, size, sprite, glow, see-through, effects, sky, weather, filters, screen effects) is ALWAYS
+- How something LOOKS (color, size, sprite, glow, see-through, effects, weather, filters, screen effects) is ALWAYS
   set_look / set_scene / add_reaction. Never add, remove or reshape objects, or change physics, for a look request.
 - Colors are hex like #ff8c1a. "each one a different color" = one set_look per id, each with its own tint.
   Grass = top_tint on platforms, dirt = body_tint. A theme ("make it a <place/holiday/mood>") = set_scene plus
@@ -144,9 +144,9 @@ EXAMPLES = [  # must not match demo commands (see CLAUDE.md core principle). Sho
         ],
     }),
     ("cozy autumn evening vibe, a ripple when I grab coins, and let me save my game", None, {
-        "plan": "Evening = set_scene sky, warm wash and falling leaves; ring on coin; saving is unsupported.",
+        "plan": "Evening = set_scene warm wash and falling leaves; ring on coin; saving is unsupported.",
         "ops": [
-            {"op": "set_scene", "asked": "cozy autumn evening vibe", "sky": "#ff9a5a", "sky_bottom": "#5b3a8a", "overlay": "#ff7a30", "overlay_alpha": 0.15, "weather": ["leaves"]},
+            {"op": "set_scene", "asked": "cozy autumn evening vibe", "overlay": "#ff7a30", "overlay_alpha": 0.15, "weather": ["leaves"]},
             {"op": "add_reaction", "asked": "a ripple when I grab coins", "event": "coin", "effect": "ring", "color": "#ffd27a"},
             {"op": "unsupported", "asked": "let me save my game", "reason": "save the game"},
         ],

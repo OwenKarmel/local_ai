@@ -92,10 +92,6 @@ class SetLook(BaseModel):
 class SetScene(BaseModel):
     op: Literal["set_scene"]
     reset: bool = Field(False, description="true = back to the default scene first")
-    sky: Hex = None
-    sky_bottom: Hex = None
-    scenery: Optional[bool] = Field(None, description="show the background hills and clouds")
-    scenery_tint: Hex = None
     overlay: Hex = Field(None, description="translucent color over everything")
     overlay_alpha: Optional[float] = Field(None, ge=0, le=0.8)
     weather: list[Literal[SceneWeather, "none"]] = Field([], description="replaces the current weather; ['none'] clears it")
@@ -106,7 +102,7 @@ class SetScene(BaseModel):
     brightness: Optional[float] = Field(None, ge=0.3, le=1.7)
     pixelate: Optional[float] = Field(None, ge=0, le=8)
     zoom: Optional[float] = Field(None, ge=1, le=2)
-    _c = _colors("sky", "sky_bottom", "scenery_tint", "overlay", "weather_color")
+    _c = _colors("overlay", "weather_color")
 
 
 class AddReaction(BaseModel):
@@ -273,8 +269,6 @@ def set_scene(ed, op: SetScene, where: str):
     if _norm(sc) == before:
         ed.repairs.append(f"{where}: the scene already looks like that, so nothing changed")
         return
-    if op.sky or op.sky_bottom:
-        words.append(f"made the sky {color_name(op.sky or op.sky_bottom)}")
     if op.overlay and (op.overlay_alpha or 0) > 0:
         words.append(f"tinted everything {color_name(op.overlay)}")
     if op.filter and op.filter != "none":
