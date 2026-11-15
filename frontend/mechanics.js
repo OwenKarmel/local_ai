@@ -40,15 +40,24 @@ window.makeMechanicsApi = function (scene, abilityName, report) {
   };
   const target = (t) => (t === "player" ? scene.player : t === "enemies" ? scene.enemies : t === "platforms" ? scene.platforms
     : t === "hazards" ? scene.hazards : t);
+  const keys = {};
   const api = {
     TILE: scene.TILE,
     player: scene.player,
     // direction the player faces: 1 = right, -1 = left
     facing: () => (scene.player.flipX ? -1 : 1),
-    // keyboard key ("A".."Z", "SPACE", "SHIFT"): k.pressed() true only on the frame it went down; k.down() while held
+    // keyboard key ("A".."Z", "SPACE", "SHIFT"): k.pressed() true once per press; k.down() while held.
+    // Own edge detection (not Phaser's JustDown), so keys the game also reads (SPACE = jump) still work.
+    // Same tracker for the same key name, so calling api.key("F") inside update() every frame works too.
     key(name) {
-      const k = scene.input.keyboard.addKey(String(name).toUpperCase());
-      return { pressed: () => Phaser.Input.Keyboard.JustDown(k), down: () => k.isDown };
+      const id = String(name).toUpperCase();
+      if (keys[id]) return keys[id];
+      const k = scene.input.keyboard.addKey(id);
+      let seen = k.isDown ? k.timeDown : -1;
+      return (keys[id] = {
+        pressed: () => { if (k.isDown && k.timeDown !== seen) { seen = k.timeDown; return true; } return false; },
+        down: () => k.isDown,
+      });
     },
     // physics sprite. opts: vx, vy (px/s), gravity (default true), tint (0xRRGGBB), scale, bounce (0..1),
     // lifeMs (auto-destroy), solid (collide with platforms, default true). Textures: "fx_ball", "fx_dot", "player", "enemy"
@@ -61,10 +70,20 @@ window.makeMechanicsApi = function (scene, abilityName, report) {
       s.setVelocity(opts.vx || 0, opts.vy || 0);
       if (opts.solid !== false) scene.physics.add.collider(s, scene.platforms);
       if (opts.lifeMs) scene.time.delayedCall(opts.lifeMs, () => s.active && s.destroy());
+      s.onHit = (b, fn) => api.onHit(s, b, fn); // same as api.onHit(sprite, b, fn)
       return s;
     },
-    // call fn(a, b) when a overlaps b. a, b: a sprite, a group, or "player" | "enemies" | "platforms" | "hazards"
-    onHit(a, b, fn) { return scene.physics.add.overlap(target(a), target(b), guard(fn)); },
+    // call fn(a, b) when a overlaps b. a, b: a sprite, a group, or "player" | "enemies" | "platforms" | "hazards".
+    // Registering the same (a, b) pair again is a no-op, so calling it every frame doesn't pile up colliders.
+    onHit(a, b, fn) {
+      const ta = target(a), tb = target(b);
+      if (!ta || !tb) return null;
+      const reg = (ta.__hits = ta.__hits || new Map());
+      if (reg.has(tb)) return reg.get(tb);
+      const c = scene.physics.add.overlap(ta, tb, guard(fn));
+      reg.set(tb, c);
+      return c;
+    },
     // defeat an enemy (same as stomping it): removes it with a burst
     defeat(enemy) {
       if (!enemy || !enemy.active) return;

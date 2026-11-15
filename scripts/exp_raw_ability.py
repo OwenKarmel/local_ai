@@ -10,6 +10,7 @@ only errors are fed back, not "it didn't do what you asked"), writing <model>_r<
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -88,7 +89,7 @@ Reply with ONLY JSON: {"explanation": "<one sentence>", "keys": ["F"], "code": "
 API (use ONLY these, plus sprite.x, sprite.y, sprite.setVelocity(vx, vy), sprite.setTint(0xRRGGBB), sprite.clearTint(), sprite.destroy()):
 - api.key(name) -> k; k.pressed() is true only on the frame the key goes down; k.down() while held. name: "A".."Z", "SPACE", "SHIFT"
 - api.spawn(texture, x, y, {vx, vy, gravity, tint, scale, bounce, lifeMs, solid}) -> sprite. gravity defaults to true; solid (stops on platforms) defaults to true; lifeMs removes it after that time
-- api.onHit(a, b, fn) calls fn(a, b) every time a overlaps b. a, b: a sprite, or "player" | "enemies" | "platforms" | "hazards"
+- api.onHit(a, b, fn) calls fn(a, b) every time a overlaps b (b is the enemy when b = "enemies"). a, b: a sprite, or "player" | "enemies" | "platforms" | "hazards". Register once, e.g. right after spawn. Spawned sprites also have sprite.onHit(b, fn)
 - api.defeat(enemy) defeats an enemy
 - api.enemies() -> list of active enemy sprites
 - api.player is the player sprite (24x30 px); api.facing() -> 1 facing right, -1 facing left
@@ -140,7 +141,17 @@ def syntax_check(code: str) -> str | None:
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
         f.write("(function (ABILITIES, Phaser) {\n" + code + "\n});\n")
     p = subprocess.run(["node", "--check", f.name], capture_output=True, text=True)
-    return None if p.returncode == 0 else p.stderr.strip().splitlines()[-1][:300] if p.stderr.strip() else "syntax error"
+    if p.returncode == 0:
+        return None
+    lines = p.stderr.strip().splitlines()
+    err = next((ln for ln in lines if "Error" in ln), "syntax error")
+    m = next((re.search(r"\.js:(\d+)$", ln) for ln in lines if re.search(r"\.js:(\d+)$", ln)), None)
+    line_no = m.group(1) if m else "?"
+    try:  # point at the offending line of the model's code (the wrapper adds one line on top)
+        src = code.splitlines()[int(line_no) - 2]
+    except (ValueError, IndexError):
+        src = ""
+    return f"{err} at line {int(line_no) - 1 if line_no.isdigit() else '?'}: {src.strip()[:120]}"
 
 
 def model_path(size: str) -> str:
