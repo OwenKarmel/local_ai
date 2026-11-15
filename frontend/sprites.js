@@ -10,7 +10,7 @@
   function warn(msg) {
     if (S.warned.has(msg)) return;
     S.warned.add(msg);
-    if (window.Sketch2Game && window.Sketch2Game.log) window.Sketch2Game.log(msg, "error");
+    if (window.Callout && window.Callout.log) window.Callout.log(msg, "error");
     else console.warn(msg);
   }
 
@@ -195,9 +195,21 @@
         speed: { min: 30, max: 110 }, angle: { min: 0, max: 360 }, lifespan: { min: 300, max: 520 },
         scale: { start: 0.6, end: 0 }, rotate: { min: 0, max: 360 }, emitting: false,
       }).setDepth(6);
+      this.confettiEmitters = [0xe95b62, 0xffd34e, 0x63d471, 0x58a6ff, 0xd88cff].map((color) => {
+        const em = scene.add.particles(0, 0, star, {
+          speed: { min: 130, max: 340 }, angle: { min: 235, max: 305 }, lifespan: { min: 1300, max: 2300 },
+          gravityY: 520, scale: { start: 0.8, end: 0.55 }, rotate: { min: 0, max: 360 }, emitting: false,
+        }).setDepth(7);
+        em.setParticleTint(color);
+        return em;
+      });
     },
     burst(x, y, color = 0xffffff, n = 10) { this.burstEm.setParticleTint(color); this.burstEm.explode(n, x, y); },
     sparkle(x, y, color = 0xfff2a0, n = 7) { this.sparkEm.setParticleTint(color); this.sparkEm.explode(n, x, y); },
+    confetti(x, y, n = 100) {
+      const list = this.confettiEmitters || [];
+      list.forEach((em, i) => em.explode(Math.ceil(n / list.length), x + (i - (list.length - 1) / 2) * 26, y));
+    },
     // Gentle looping sparkle around a resting item. Caller destroys the returned emitter.
     idle(x, y, color = 0xfff2a0) {
       return this.scene.add.particles(x, y, this.star, {
@@ -225,6 +237,7 @@
     S.skinDynamic(scene, p, entry, "fx_ball", 14, 14);
     S.applyTint(p, entry, look.tint);
     p.trailColor = p.tintColor ?? S.tint(entry && entry.trail) ?? 0xffa030;
+    if (look.fire && p.preFX && !p._fireGlow) p._fireGlow = p.preFX.addGlow(0xff6a16, 4, 0, false, 0.12, 16);
   };
 
   S.spawnProjectile = function (scene, x, y, dir, opts = {}) {
@@ -233,6 +246,7 @@
     S.setProjectileLook(scene, p, opts);
     p.setVelocityX(dir * (opts.speed || 420)).setFlipX(dir < 0).setDepth(4);
     S.fx.trail(p);
+    if (opts.fire) p.fireProjectile = true;
     scene.time.delayedCall(opts.life_ms || 1500, () => p.active && p.destroy());
     return p;
   };
