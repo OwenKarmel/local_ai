@@ -46,6 +46,26 @@
     .log2 .entry { margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
     .log2 .error { color: #ff7b7b; } .log2 .ok { color: #8be28b; } .log2 .info { color: #aab; }
     #cmd-input { flex: 1; background: #1b1c22; color: #eee; border: 1px solid #3b3f52; border-radius: 4px; padding: 7px 8px; font-size: 14px; }
+    /* ---------- demo video mode (demo.js): only the game, a small mic, a caption ---------- */
+    #mini-mic, #caption { display: none; }
+    body.demo { background: #000; overflow: hidden; }
+    body.demo #panel, body.demo #help { display: none; }
+    body.demo #app { padding: 0; gap: 0; height: 100vh; }
+    body.demo #left { width: 100vw; height: 100vh; align-items: center; justify-content: center; }
+    body.demo #game { border-radius: 0; display: flex; align-items: center; justify-content: center; width: 100vw; height: 100vh; }
+    body.demo #game canvas { width: min(100vw, 200vh) !important; height: min(50vw, 100vh) !important; max-width: none; }
+    body.demo #mini-mic { display: block; position: fixed; right: 20px; bottom: 20px; width: 56px; height: 56px; border-radius: 50%;
+      font-size: 24px; padding: 0; background: rgba(20, 22, 30, .55); border: 2px solid rgba(255,255,255,.35); opacity: .8;
+      user-select: none; touch-action: none; z-index: 20; }
+    body.demo #mini-mic:hover { opacity: 1; }
+    body.demo #mini-mic.recording { background: #e0283c; border-color: #fff; opacity: 1; }
+    body.demo #caption { display: block; position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); max-width: 70vw;
+      text-align: center; font: 600 20px -apple-system, system-ui, sans-serif; color: #fff; opacity: 0; transition: opacity .3s;
+      text-shadow: 0 2px 6px rgba(0,0,0,.8); pointer-events: none; z-index: 20; }
+    body.demo #caption.show { opacity: 1; }
+    body.demo #caption .heard { font-size: 22px; }
+    body.demo #caption .reply { font-size: 16px; font-weight: 500; color: #b8f5c0; margin-top: 4px; }
+    body.demo #caption .reply.refused, body.demo #caption .reply.error { color: #ffb3b3; }
   </style>
 </head>
 <body>
@@ -53,6 +73,8 @@
     <div id="left">
       <div id="game"></div>
       <div id="listen-badge"></div>
+      <button id="mini-mic" title="Hold to talk (or hold V)">🎙</button>
+      <div id="caption"></div>
       <div id="help">Arrows/WASD move · Space/Up/W jump · R restart · <b>hold V to talk</b></div>
     </div>
     <div id="panel">
@@ -69,7 +91,7 @@
         <form id="cmd-form"><input id="cmd-input" placeholder="e.g. lower the gravity" autocomplete="off"><button type="submit">Send</button></form>
       </details>
       <div id="stage-bar"></div>
-      <div><button id="reset-btn">Reset this level</button></div>
+      <div><button id="reset-btn">Reset this level</button> <button id="demo-btn" title="Shift+D toggles, Esc exits">🎬 Demo mode</button></div>
       <div id="log"></div>
     </div>
   </div>
@@ -80,5 +102,6 @@
   <script src="game.js"></script>
   <script src="voice.js"></script>
   <script src="testwin.js"></script>
+  <script src="demo.js"></script>
 </body>
 </html>
