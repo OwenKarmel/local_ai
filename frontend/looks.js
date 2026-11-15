@@ -11,7 +11,7 @@
   function safe(name, fn) {
     try { return fn(); } catch (err) {
       const msg = `Look '${name}' failed: ${err.message}`;
-      if (window.Sketch2Game) window.Sketch2Game.log(msg, "error"); else console.warn(msg);
+      if (window.Callout) window.Callout.log(msg, "error"); else console.warn(msg);
     }
   }
   const hex = (v, d = null) => (v == null ? d : S.tint(v) ?? d);
@@ -185,11 +185,17 @@
     safe("scene", () => {
       if (!scene.sceneFx) L.init(scene);
       sc = sc || {};
+      if (sc.background === "moon") sc = { ...sc, sky: sc.sky ?? "#080c22", sky_bottom: sc.sky_bottom ?? "#283459",
+        scenery: sc.scenery ?? false, weather: sc.weather && sc.weather.length ? sc.weather : ["stars"],
+        weather_color: sc.weather_color ?? "#ffffff", overlay: sc.overlay ?? "#8b91aa", overlay_alpha: sc.overlay_alpha ?? 0.08 };
+      else if (sc.background === "dusk") sc = { ...sc, sky: sc.sky ?? "#ffad72", sky_bottom: sc.sky_bottom ?? "#604080",
+        scenery: sc.scenery ?? true, scenery_tint: sc.scenery_tint ?? "#75506f", weather: sc.weather && sc.weather.length ? sc.weather : ["clouds"] };
       const st = scene.sceneFx, cam = scene.cameras.main;
       // clear the previous scene look
       for (const k of ["sky", "overlay"]) if (st[k]) { st[k].destroy(); st[k] = null; }
       for (const em of st.weather || []) em.destroy();
       st.weather = [];
+      if (st.craters) { st.craters.destroy(); st.craters = null; }
       if (st.cm) st.cm.reset();
       if (st.pix && cam.postFX) { cam.postFX.remove(st.pix); st.pix = null; }
 
@@ -205,6 +211,25 @@
         st.sky.fillGradientStyle(top, top, bottom, bottom, 1).fillRect(-VIEW_W, -VIEW_H, VIEW_W * 3, VIEW_H * 3);
         cam.setBackgroundColor(top);
       } else cam.setBackgroundColor("#cfefff");
+
+      // Moonlight turns platform tiles to cool stone and adds pixel-art crater rings to the ground.
+      for (const obj of Object.values(scene.byId || {})) {
+        if (obj.def && obj.def.type === "platform") for (const v of obj.visuals || []) {
+          if (v._moonBase === undefined) v._moonBase = v.recolorColor ?? null;
+          S.recolor(v, sc.background === "moon" ? 0x9aa1b4 : v._moonBase);
+        }
+      }
+      if (sc.background === "moon") {
+        st.craters = scene.add.graphics().setDepth(1.2);
+        st.craters.lineStyle(2, 0x555d70, 0.65);
+        for (const e of (scene.level.entities || []).filter((x) => x.type === "platform" && (x.h || 1) > 1)) {
+          const left = e.x * scene.TILE + 18, right = (e.x + e.w) * scene.TILE - 12, y = e.y * scene.TILE + 7;
+          for (let x = left + 28; x < right; x += 74) {
+            st.craters.strokeEllipse(x, y, 18, 7);
+            st.craters.strokeEllipse(x + 2, y - 1, 10, 4);
+          }
+        }
+      }
 
       // color wash over everything
       const ov = hex(sc.overlay);

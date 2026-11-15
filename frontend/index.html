@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Sketch2Game</title>
+  <title>Callout</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #1e1f26; color: #e6e6e6; }
@@ -54,11 +54,11 @@
     body.demo #left { width: 100vw; height: 100vh; align-items: center; justify-content: center; }
     body.demo #game { border-radius: 0; display: flex; align-items: center; justify-content: center; width: 100vw; height: 100vh; }
     body.demo #game canvas { width: min(100vw, 200vh) !important; height: min(50vw, 100vh) !important; max-width: none; }
-    body.demo #mini-mic { display: block; position: fixed; right: 20px; bottom: 20px; width: 56px; height: 56px; border-radius: 50%;
-      font-size: 24px; padding: 0; background: rgba(20, 22, 30, .55); border: 2px solid rgba(255,255,255,.35); opacity: .8;
+    body.demo #mini-mic { display: block; position: fixed; right: min(1.25vw, 2.5vh); top: calc((100vh - min(50vw, 100vh)) / 2 + min(1.458vw, 2.917vh));
+      width: min(4.583vw, 9.167vh); height: min(5.417vw, 10.833vh); border-radius: 0; font-size: 0; padding: 0;
+      color: transparent; background: transparent; border: 0; opacity: 1;
       user-select: none; touch-action: none; z-index: 20; }
-    body.demo #mini-mic:hover { opacity: 1; }
-    body.demo #mini-mic.recording { background: #e0283c; border-color: #fff; opacity: 1; }
+    body.demo #mini-mic.recording { background: rgba(240, 78, 85, .12); }
     body.demo #caption { display: block; position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); max-width: 70vw;
       text-align: center; font: 600 20px -apple-system, system-ui, sans-serif; color: #fff; opacity: 0; transition: opacity .3s;
       text-shadow: 0 2px 6px rgba(0,0,0,.8); pointer-events: none; z-index: 20; }
@@ -73,12 +73,12 @@
     <div id="left">
       <div id="game"></div>
       <div id="listen-badge"></div>
-      <button id="mini-mic" title="Hold to talk (or hold V)">🎙</button>
+      <button id="mini-mic" title="Hold to talk (or hold V)" aria-label="Hold to talk"></button>
       <div id="caption"></div>
       <div id="help">Arrows/WASD move · Space/Up/W jump · R restart · <b>hold V to talk</b></div>
     </div>
     <div id="panel">
-      <h2>Sketch2Game</h2>
+      <h2>Callout</h2>
       <button id="talk-btn">🎙 Hold to talk (or hold V)</button>
       <div id="mic-meter"><div id="mic-level"></div></div>
       <div id="voice-status"></div>

@@ -1,4 +1,4 @@
-# CLAUDE.md — Voice game copilot (name TBD)
+# CLAUDE.md — Callout
 
 Standing instructions for every Claude Code session on this repo. Ashwin and Owen each run their own session in parallel. Keep this file current and concise. `plan.md` holds the demo script (the one goal), the task board, the contracts and the decisions.
 
@@ -92,7 +92,7 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/schema.py` | Pydantic models: `Level` (with `abilities`), `Entity`, `Physics`, `LowLevelOp` |
 | `backend/config.py` | Env-var config: `BONSAI_BASE_URL`, `FAST_BASE_URL`, `CODE_MODEL`, `FAST_MODEL`, `ARGMAX_URL` |
 | `backend/levels/sample.json` | Handwritten sample level, 40×15, 4 coins (must always work). Stage 1 |
-| `backend/levels/boss.json` | Stage 2, "Boss Arena": two-phase boss `boss1` (behavior `boss`, 6 hp), goal locked until it's defeated |
+| `backend/levels/boss.json` | Stage 2, "Boss Arena": fireball-only boss `boss1` (behavior `boss`, 6 hp, timed shots), goal locked until it's defeated |
 | `backend/requirements.txt` | Python deps |
 | `frontend/index.html` | The single page: game plus side panel |
 | `frontend/game.js` | Phaser scene: builds the level from JSON, player controls, collisions, win/death |
@@ -144,15 +144,15 @@ The source of truth is **plan.md → "Interface contracts"**: `/api/transcribe`,
 - `abilities`: optional, default `{}`. Settings for abilities whose code the model wrote in mechanics.js (task 6). No ability is pre-written.
 - `look` (entity), `player_look`, `scene`, `reactions` (level): optional, visual only (`Look`, `PlayerLook`, `SceneLook`, `Reaction` in `backend/schema.py`). Never change gameplay, so they skip the checker.
 - Levels are played as **stages** in order (`STAGES` in `backend/main.py`: sample, then boss). Each stage has its own version stack; commands edit the active stage.
-- Enemy `props.hp` (default 1) = stomps to defeat; the game shows an HP bar when it's above 1. A goal with `props.locked_by: "<id>"` can't be reached while that object is alive. Behavior props and their allowed ranges live in `BEHAVIOR_PROPS` in `backend/summary.py` (shown to the model, enforced by `set_property`).
-- Spikes/lava kill on touch. Enemies die when stomped from above, kill otherwise. `double_jump` grants one air jump. `grow` turns the player into a taller character (catalog default `player_big`, body 28×48); a big player survives one hazard or enemy hit by shrinking back (pits still kill). `goal` = win.
+- Enemy `props.hp` (default 1) = hits to defeat; the game shows an HP bar when it's above 1. `props.stompable: false` makes an enemy immune to stomps. A goal with `props.locked_by: "<id>"` can't be reached while that object is alive. Behavior props and their allowed ranges live in `BEHAVIOR_PROPS` in `backend/summary.py` (shown to the model, enforced by `set_property`).
+- Spikes/lava kill on touch. Enemies die when stomped from above, kill otherwise. `double_jump` grants one air jump. `grow` scales the player proportionally (catalog default `player_big`, body 1.6× the normal 24×30 body); a big player survives one hazard or enemy hit by shrinking back (pits still kill). `goal` = win.
 
 ## Assets and sprites
-- **Art:** Kenney "New Platformer Pack 1.1" (kenney.nl), **CC0** (public domain; credit optional). The license file is at `frontend/assets/sprites/License.txt`. `ball_white.png`, `effect_*.png` and `character_big_*.png` (the grown player, made by `tools/big_player.py`) are derived or generated from it. No other art sources without checking the license; never Nintendo or other copyrighted game art.
+- **Art:** Kenney "New Platformer Pack 1.1" (kenney.nl), **CC0** (public domain; credit optional). The license file is at `frontend/assets/sprites/License.txt`. `ball_white.png`, `effect_*.png`, `character_big_*.png` (grown player), and `character_camo_*.png` (palette-derived camo) are derived or generated from it. No other art sources without checking the license; never Nintendo or other copyrighted game art.
 - Only the sprites we use are in the repo. Never commit the full downloaded pack. To add sprites: edit `tools/build_catalog.py`, then run `python tools/build_catalog.py <extracted pack folder>` (needs Pillow).
 - Entities take optional `sprite` (a catalog name) and `tint` (hex like `#3399ff`). Unknown sprite name → the type's default sprite → a plain colored rectangle. The game never crashes on a bad name or tint.
-- Physics bodies do not depend on the art: player 24×30 (28×48 while grown), enemy 28×24 per tile of `w`/`h` (a 2×2 boss is 56×48), whatever sprite is used.
-- Live look changes: `Sketch2Game.setAppearance(id, {sprite, tint})`, `Sketch2Game.setPlayerLook({sprite, tint})`. Projectile visuals: `SPRITES.spawnProjectile(scene, x, y, dir, {sprite, tint, speed})` and `SPRITES.setProjectileLook(scene, projectile, {sprite, tint})`.
+- Physics bodies do not depend on the art: player 24×30 (proportionally 1.6× while grown), enemy 28×24 per tile of `w`/`h` (a 2×2 boss is 56×48), whatever sprite is used.
+- Live look changes: `Callout.setAppearance(id, {sprite, tint})`, `Callout.setPlayerLook({sprite, tint})`. Projectile visuals: `SPRITES.spawnProjectile(scene, x, y, dir, {sprite, tint, speed})` and `SPRITES.setProjectileLook(scene, projectile, {sprite, tint})`. Model-written attacks can use `api.projectile(x, y, dir, {fire:true})` for a glowing, flickering fireball with a Phaser trail and impact burst.
 
 ## Working without a Mac (Windows, Linux, or a Mac without the models)
 Everything except the models and Argmax runs anywhere: the game, the backend, the stub endpoints, and the playability checker. Needs Python 3.10+, git, and `gh` logged in (`gh auth login`).
@@ -271,6 +271,6 @@ Model notes:
 
 ## Conventions
 - Python: type hints, Pydantic v2, keep endpoints in `main.py` until it hurts.
-- JS: plain browser scripts (no build step, no modules, no npm deps at runtime). Globals: `window.MECHANICS`, `window.Sketch2Game` (working name; `loadLevel(json)`, `log(msg, kind)`, `.level`, `.scene`).
+- JS: plain browser scripts (no build step, no modules, no npm deps at runtime). Globals: `window.MECHANICS`, `window.Callout` (`loadLevel(json)`, `log(msg, kind)`, `.level`, `.scene`).
 - Behavior signature: `MECHANICS.name = function (entity, scene, dt) {}`. `entity` is a Phaser sprite with `.def` (JSON), `.props`, `.state`; `dt` in seconds.
 - No new dependencies without a decisions-log entry in plan.md.

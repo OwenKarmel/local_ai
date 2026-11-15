@@ -1,6 +1,7 @@
 # Sprite catalog: name: description. Use a name as an entity's "sprite". "tint" is any hex color like #3399ff.
 [player]
 player_green: green alien astronaut, the player character
+player_camo: green alien astronaut in a pixel camo pattern, the player character
 player_pink: pink alien astronaut, the player character
 player_yellow: yellow alien astronaut, the player character
 player_purple: purple alien astronaut, the player character

@@ -53,6 +53,44 @@
    }
   },
   {
+   "name": "player_camo",
+   "type": "player",
+   "file": "character_camo_idle.png",
+   "description": "green alien astronaut in a pixel camo pattern, the player character",
+   "size": [
+    128,
+    128
+   ],
+   "scale": 0.375,
+   "animations": {
+    "idle": {
+     "frames": [
+      "character_camo_idle.png"
+     ],
+     "fps": 1
+    },
+    "run": {
+     "frames": [
+      "character_camo_walk_a.png",
+      "character_camo_walk_b.png"
+     ],
+     "fps": 8
+    },
+    "jump": {
+     "frames": [
+      "character_camo_jump.png"
+     ],
+     "fps": 1
+    },
+    "hit": {
+     "frames": [
+      "character_camo_hit.png"
+     ],
+     "fps": 1
+    }
+   }
+  },
+  {
    "name": "player_pink",
    "type": "player",
    "file": "character_pink_idle.png",
