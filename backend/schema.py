@@ -3,7 +3,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
-EntityType = Literal["platform", "spikes", "lava", "enemy", "coin", "double_jump", "goal"]
+EntityType = Literal["platform", "spikes", "lava", "enemy", "coin", "double_jump", "grow", "goal"]
 Scalar = Union[bool, int, float, str]
 
 
@@ -18,6 +18,63 @@ class Spawn(BaseModel):
     y: int = Field(ge=0)
 
 
+HexColor = Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
+# Looping visual effects any object can have (frontend/looks.js). Visual only: they never change gameplay.
+LookEffect = Literal["pulse", "spin", "wobble", "bob", "flicker", "blink", "rainbow", "sparkle", "trail", "fade_far"]
+
+
+class Look(BaseModel):
+    """Visual-only look of one object. None = default. Applied live by frontend/looks.js."""
+    top_tint: Optional[HexColor] = None   # recolor only the top row of a platform/hazard (grass, lava surface)
+    body_tint: Optional[HexColor] = None  # recolor only the rows below the top (dirt)
+    scale: Optional[float] = Field(None, ge=0.25, le=3)    # art size multiplier (enemies: body scales too)
+    scale_x: Optional[float] = Field(None, ge=0.25, le=3)  # extra stretch: wider / thinner
+    scale_y: Optional[float] = Field(None, ge=0.25, le=3)  # extra stretch: taller / shorter
+    alpha: Optional[float] = Field(None, ge=0.1, le=1)     # 1 = opaque
+    flip_y: Optional[bool] = None
+    glow: Optional[HexColor] = None       # glow / outline color
+    effects: list[LookEffect] = []
+
+
+class PlayerLook(Look):
+    sprite: Optional[str] = None  # catalog name; None = default player art
+    tint: Optional[HexColor] = None
+
+
+SceneWeather = Literal["rain", "snow", "leaves", "stars", "bubbles", "embers", "fog", "clouds", "confetti"]
+SceneFilter = Literal["none", "grayscale", "sepia", "negative", "vintage", "night_vision"]
+
+
+class SceneLook(BaseModel):
+    """Whole-screen look. None = default."""
+    sky: Optional[HexColor] = None          # sky color (top of the gradient)
+    sky_bottom: Optional[HexColor] = None   # bottom of the sky gradient (default: same as sky)
+    scenery: Optional[bool] = None          # show the clouds/hills background art (default true)
+    scenery_tint: Optional[HexColor] = None # recolor the background hills/clouds
+    overlay: Optional[HexColor] = None      # translucent color laid over everything (night, sunset, underwater)
+    overlay_alpha: Optional[float] = Field(None, ge=0, le=0.8)
+    weather: list[SceneWeather] = []
+    weather_color: Optional[HexColor] = None
+    filter: Optional[SceneFilter] = None
+    hue_shift: Optional[float] = Field(None, ge=-180, le=180)  # degrees; 180 = swap colors around
+    saturation: Optional[float] = Field(None, ge=-1, le=1)     # -1 gray .. 0 normal .. 1 vivid
+    brightness: Optional[float] = Field(None, ge=0.3, le=1.7)  # 1 = normal
+    pixelate: Optional[float] = Field(None, ge=0, le=8)        # 0 = off; retro look
+    zoom: Optional[float] = Field(None, ge=1, le=2)            # camera zoom (1 = normal)
+
+
+ReactionEvent = Literal["jump", "land", "step", "hurt", "die", "coin", "powerup", "stomp", "enemy_defeated", "win"]
+ReactionEffect = Literal["shake", "flash", "sparkles", "confetti", "burst", "ring", "zoom_bump", "spin", "squash", "blink", "mark"]
+
+
+class Reaction(BaseModel):
+    """When `event` happens, play `effect` at the object involved (spin/squash/blink act on that object)."""
+    event: ReactionEvent
+    effect: ReactionEffect
+    color: Optional[HexColor] = None
+    size: float = Field(1, ge=0.3, le=3)
+
+
 class Entity(BaseModel):
     id: str = Field(min_length=1)
     type: EntityType
@@ -29,6 +86,7 @@ class Entity(BaseModel):
     props: dict[str, Scalar] = {}
     sprite: Optional[str] = None  # name from frontend/assets/catalog.json; unknown names fall back to the type default
     tint: Optional[str] = None    # hex color like "#3399ff"
+    look: Optional[Look] = None   # extra visual-only settings (size, glow, effects, ...)
 
 
 class Level(BaseModel):
@@ -38,6 +96,9 @@ class Level(BaseModel):
     height: int = Field(15, ge=5, le=50)
     physics: Physics = Physics()
     abilities: dict[str, dict] = {}  # settings for model-written abilities in mechanics.js (task 6); none are pre-written
+    player_look: PlayerLook = PlayerLook()
+    scene: SceneLook = SceneLook()
+    reactions: list[Reaction] = Field([], max_length=16)
     spawn: Spawn
     entities: list[Entity]
 
@@ -76,7 +137,7 @@ class RemoveEntity(BaseModel):
 class UpdateEntity(BaseModel):
     op: Literal["update_entity"]
     id: str
-    changes: dict  # partial Entity: any of x, y, w, h, behaviors, props (props merge key by key)
+    changes: dict  # partial Entity: any of x, y, w, h, behaviors, props (merge key by key), sprite, tint, look (whole)
 
 
 class SetPhysics(BaseModel):
@@ -91,7 +152,23 @@ class SetAbility(BaseModel):
     settings: dict
 
 
-LowLevelOp = Annotated[Union[AddEntity, RemoveEntity, UpdateEntity, SetPhysics, SetAbility], Field(discriminator="op")]
+class SetPlayerLookOp(BaseModel):
+    op: Literal["set_player_look"]
+    look: PlayerLook  # the full new player look
+
+
+class SetSceneOp(BaseModel):
+    op: Literal["set_scene"]
+    scene: SceneLook  # the full new scene look
+
+
+class SetReactionsOp(BaseModel):
+    op: Literal["set_reactions"]
+    reactions: list[Reaction]  # the full new list
+
+
+LowLevelOp = Annotated[Union[AddEntity, RemoveEntity, UpdateEntity, SetPhysics, SetAbility, SetPlayerLookOp, SetSceneOp,
+                             SetReactionsOp], Field(discriminator="op")]
 
 
 class LowLevelPatch(BaseModel):

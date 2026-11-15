@@ -74,7 +74,7 @@ def check(level: dict, player: dict | None) -> dict:
     Physics numbers come from the shared config (A3), never hardcoded."""
 ```
 
-**Parallel work:** tasks 5, 7, 9, 10, 11 and 16 run on any machine (stubs: `STUB_COMMANDS=1`, `STUB_SPEECH=1`). Coordination points: the shared physics config (10 → 11, 12, 13), the checker interface above, the mechanics-code op (5 ↔ 6 ↔ 7), and `cursor` (8 ↔ 9).
+**Parallel work:** tasks 5, 7, 9, 10, 11 and 16 run on any machine (`STUB_SPEECH=1`; commands need a model server, e.g. Ashwin's over the local network). Coordination points: the shared physics config (10 → 11, 12, 13), the checker interface above, the mechanics-code op (5 ↔ 6 ↔ 7), and `cursor` (8 ↔ 9).
 
 
 ## Later
@@ -125,7 +125,7 @@ Found on main, 11-14 16:40:
 - `backend/prompts.py`: the worked example "make this harder and give me fireballs", which matches two demo beats, and the `set_ability` fireball line in the ops list.
 - `backend/prompts.py`: the rule "Harder: wider gaps (+1)… Easier: narrower gaps…", which maps one command to fixed levers. To be replaced by generic context (player limits, task 13).
 - plan.md: the deterministic ladder (old A10) and the `route: "ladder"` contract value. Removed in this PR.
-- Allowed and kept: `backend/stub_commands.py` keyword responses, which only run under `STUB_COMMANDS=1` (frontend development without a model). The intent ops (widen_gap, add_enemy, …) and the "ahead of the player" rule are building blocks used by many commands.
+- Keyword stubs (`backend/stub_commands.py`, `STUB_COMMANDS=1`) removed 11-14. The intent ops (widen_gap, add_enemy, …) and the "ahead of the player" rule are building blocks used by many commands.
 
 ## Interface contracts (source of truth)
 Exact field names and types. A change needs a decisions-log entry and a heads-up to the other person.
@@ -137,7 +137,7 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 - `speaker` is `null` until SpeakerKit chaos mode (O5) exists; then `"player"`, `"friend"`, or an enrolled name.
 
 ### `POST /api/command`
-- Request: `{ "text": string, "source": "typed" | "voice", "speaker": string | null, "player": { "x": number, "y": number, "has_double_jump": boolean } | null, "cursor": { "x": number, "y": number } | null }`
+- Request: `{ "text": string, "source": "typed" | "voice", "speaker": string | null, "player": { "x": number, "y": number, "has_double_jump": boolean, "is_big": boolean } | null, "cursor": { "x": number, "y": number } | null }`
 - `cursor`: the tile under the mouse pointer (tiles, x right, y down), or `null`. Passed to the model as context ("put a block here"). Task 8.
 - `player`: the tile containing the player's center (x right, y down), or `null` when not playing. The backend uses it for "near_player", "ahead of me", "the next gap" and "make this harder": while playing, edits land ahead of the player and things fully behind the player are left alone.
 - Response:
@@ -174,6 +174,19 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 - `{ "op": "remove_entity", "id": string }`
 - `{ "op": "update_entity", "id": string, "changes": object }`. `changes` is a partial Entity: any of `x`, `y`, `w`, `h`, `behaviors`, `props`. `props` is merged key by key; the other fields are replaced.
 
+### `GET /api/stage`, `POST /api/stage` (levels in sequence)
+- `GET` → `{ "index": number, "count": number, "names": string[] }`. Stage 0 = sample level, stage 1 = Boss Arena.
+- `POST { "index": number }` → `{ "ok": boolean, "index", "count", "names", "level": Level }`. `ok` false if the index doesn't exist (then nothing changes).
+- Each stage keeps its own version stack. `GET /api/level`, `/api/command`, `/api/undo`, `/api/history` and `/api/level/reset` act on the **active** stage; edits to a stage are kept when you leave it. Reset restores only the active stage.
+- `/api/command` response gains `"stage": number` (the stage it edited). The frontend ignores a patch whose `stage` isn't the loaded one.
+
+### Command traces (debugging the harness)
+- `/api/command` response gains `"trace_id": string | null`. Every command is saved to `backend/data/traces/<trace_id>.json` (gitignored): input, player, level before, full prompt + schema, each model attempt (raw reply, usage, parsed intent, errors, repairs, patch), outcome. Harness crashes are saved too (`status: "crash"`).
+- `GET /api/traces?limit=50&failures=false` → `{ "traces": [summary] }`, newest first. `failures=true` = error/refused/crash or flagged.
+- `GET /api/traces/{id}` → the full trace (404 if unknown).
+- `POST /api/traces/{id}/flag` `{ "note": string }` → summary. The in-game "👎 Wrong result" button calls it for the last command.
+- CLI: `python -m backend.traces [--failures]`, `... show <id|substring> [--prompt]`, `... replay <id|substring> [--model PATH]`.
+
 ### `POST /api/speak`
 - Request: `{ "text": string, "style": "normal" | "refusal" | "hype" }`
 - Response: audio (wav) or `{ "audio_url" }`. **Ashwin decides (O4), then documents it here.** The stub returns `audio/wav` bytes directly; the frontend should handle that shape.
@@ -186,20 +199,7 @@ Exact field names and types. A change needs a decisions-log entry and a heads-up
 
 ### Stubs
 Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
-- `/api/command` is real (needs the model server). **With `STUB_COMMANDS=1` it returns canned responses instead** (`backend/stub_commands.py`), by keyword in `text`, checked in this order:
-
-| Text contains | Result |
-|---|---|
-| "impossible" or "10 tiles" | `refused`, with reason and spoken message |
-| "gravity" | `applied`, fast route, `set_physics` gravity lowered by 300 (floor 400) |
-| "fireball" | `applied`, fast route, `set_ability` fireball enabled |
-| "remove" | `applied`, `remove_entity` of the first enemy (`refused` if none left) |
-| "faster" | `applied`, `update_entity` on every enemy (`props.speed` +40) |
-| "gap" | `applied`, `update_entity` on `ground2` (first gap one tile wider) |
-| "enemy" | `applied`, `add_entity` enemy 3 tiles ahead of `player`, or at x 8, then 19, 26, 36 without a player |
-| anything else | `error` |
-
-  The stub really applies its ops to the in-memory level, so `level`, `version`, `GET /api/level` and undo stay consistent. It sleeps 0.6 s (fast) or 2 s (level) so "thinking" UI can be tested. The real command takes 9 to 25 s on the 4B.
+- `/api/command` is always real: it needs the model server. If it's unreachable: `status: "error"` ("Model server not reachable"). The keyword stub was removed.
 - `/api/transcribe` returns `"lower the gravity"`, `speaker: null`.
 - `/api/speak` returns a 0.25 s beep wav; pitch differs per style.
 
@@ -240,6 +240,7 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
 | 11-14 15:00 | Spoken reply is built from what was actually applied, not from the model's text | It can't claim changes that didn't happen |
 | 11-14 15:00 | Model may return at most 6 ops (JSON schema `maxItems`); gap size always via widen_gap | "make the level harder" took 43 s with a long op list; "make the first gap smaller" picked the wrong op |
 | 11-14 15:00 | `STUB_COMMANDS=1` env var keeps the keyword stub available | Frontend work without a model server |
+| 11-14 17:40 | **Keyword stub removed** (`STUB_COMMANDS`, `backend/stub_commands.py`). `/api/command` always goes to Bonsai | Canned keyword answers masked what the model actually does and drifted from the real pipeline (e.g. "make it shoot slower" errored in stub mode only) |
 | 11-14 15:00 | 4B eval with the new contract, 14 commands: 14/14 applied on the first model call, 12/12 intent checks, median 16.2 s (this run: decode 27 tok/s, prefill 219 tok/s, 2,207-token prompt). An earlier run of the same code minus the prompt fixes had a median of 12.0 s (37 and 287 tok/s); the Mac was slower on the second run | Accuracy is good; latency is the problem (see Known issues) |
 | 11-14 15:10 | **Task split by machine:** Ashwin takes Mac-only work (O1, O4, A4, A6, J1, and recording J2/J3); Owen takes A3 (shared physics config) and A5 (playability checker) plus O2, O3, O6, O7. IDs kept, owners changed | Owen has no Mac. Argmax and Bonsai MLX only run on Apple silicon, and Ashwin's Mac is the demo machine. A3 and A5 are pure Python/JS and need no models |
 | 11-14 15:10 | Checker interface: `check(level, player) -> {ok, reason, spoken}` in `backend/checker.py` | Owen owns the checker, Ashwin owns the pipeline; a function boundary keeps them out of each other's files |
@@ -260,6 +261,10 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
 | 11-14 16:10 | **Intent reply: `plan` (was `explanation`) is required and comes before `ops`; `ops` needs at least one item** | Constrained decoding writes required fields first, so the optional explanation came after the ops as a justification. Planning first fixed op choice on the 2B, and empty `ops` cost a retry. Old `explanation` replies still parse |
 | 11-14 16:10 | Op selection uses a low-temperature sampler (`temperature 0.2`, no presence penalty); chat keeps the Bonsai defaults | Picking from a fixed menu wants the most likely reading; presence penalty punishes the repeated tokens JSON needs |
 | 11-14 16:10 | **New intent ops `add_platform` (over a gap, region or platform) and `add_pickup` (`double_jump`)**. Building blocks: code computes placement | With no op for them, the model substituted coins for platforms and fireballs or gravity for double jumps, and reported success |
+| 11-14 | **New entity type `grow`** (default sprite `powerup_mushroom_red`); `add_pickup` kind gains `grow`; `/api/command` `player` gains optional `is_big` (default false) | Second powerup: taller player with a different look (catalog `player_big`, body 28×48) that survives one hazard/enemy hit by shrinking. Old levels and requests still validate |
+| 11-14 17:20 | **Boss level as stage 2.** Levels play in order (`/api/stage`), one version stack per stage; `/api/command` response gains `stage`. Boss = an `enemy` 2×2 with behavior `boss` in mechanics.js (two phases from props: hp, phase2_at, speeds, jump_every, shoot_every, shot_speed). New building blocks: enemy `props.hp` (multi-hit + HP bar), enemy body scales with `w`/`h`, goal `props.locked_by`, `scene.spawnEnemyShot`, `scene.damageEnemy`, `scene.solidAt`. Behavior prop ranges in `summary.BEHAVIOR_PROPS`: listed in the summary, clamped by `set_property` | Bonsai reconfigures the boss with the same ops as any level (set_property, platforms, hazards, enemies, physics); nothing boss-specific in the pipeline |
+| 11-14 17:20 | While playing, a moving enemy (one with behaviors) counts as spanning the platform it walks on for "behind the player" | The boss roams the arena; its JSON x is only its start tile, so edits to it were skipped once the player passed that tile |
+| 11-14 18:00 | **Command traces:** every `/api/command` saves a JSON snapshot (backend/data/traces/, gitignored); response gains `trace_id`; new `/api/traces*` endpoints and a "👎 Wrong result" flag button; `python -m backend.traces` lists, shows and replays them | Failures (including applied-but-wrong) need the exact prompt, raw replies and level to fix the harness; replay reruns the same input after a fix. Additive, no client changes required |
 | 11-14 16:10 | `set_property` rejects physics keys, and props on objects with no behaviors (props are only read by behaviors) | "lower the gravity" wrote `props.gravity` onto a platform and reported success |
 
 

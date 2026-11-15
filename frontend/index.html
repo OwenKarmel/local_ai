@@ -18,6 +18,8 @@
     #log .error { color: #ff7b7b; } #log .ok { color: #8be28b; } #log .info { color: #aab; }
     button { background: #3b3f52; color: #eee; border: 0; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
     button:hover { background: #4b5068; }
+    #stage-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+    #stage-bar button.active { background: #2f6f46; }
     /* voice */
     #left { position: relative; }
     #listen-badge { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); padding: 8px 18px; border-radius: 20px;
@@ -36,6 +38,7 @@
     #voice-heard { font-size: 14px; color: #fff; min-height: 1.2em; }
     #voice-reply { font-size: 13px; color: #8be28b; min-height: 1.2em; }
     #voice-reply.refused, #voice-reply.error { color: #ff7b7b; }
+    #flag-btn { font-size: 12px; padding: 2px 8px; margin-top: 4px; }
     #cmd-form { display: flex; gap: 6px; margin-top: 6px; }
     #text-cmd summary { cursor: pointer; font-size: 13px; color: #9aa; }
     #text-cmd[open] summary { margin-bottom: 6px; }
@@ -59,18 +62,21 @@
       <div id="voice-status"></div>
       <div id="voice-heard"></div>
       <div id="voice-reply"></div>
+      <button id="flag-btn" hidden title="Save this command as a failure case (backend/data/traces/)">👎 Wrong result</button>
       <details id="text-cmd">
         <summary>⌨ Type a command instead</summary>
         <div id="cmd-out" class="log2"></div>
         <form id="cmd-form"><input id="cmd-input" placeholder="e.g. lower the gravity" autocomplete="off"><button type="submit">Send</button></form>
       </details>
-      <div><button id="reset-btn">Reset to sample level</button></div>
+      <div id="stage-bar"></div>
+      <div><button id="reset-btn">Reset this level</button></div>
       <div id="log"></div>
     </div>
   </div>
   <script src="vendor/phaser.min.js"></script>
   <script src="mechanics.js"></script>
   <script src="sprites.js"></script>
+  <script src="looks.js"></script>
   <script src="game.js"></script>
   <script src="voice.js"></script>
   <script src="testwin.js"></script>

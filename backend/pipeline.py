@@ -6,7 +6,7 @@ No global state (the eval script calls it too). Returns the /api/command contrac
 import logging
 import time
 
-from .intents import compile_intent, intent_schema, parse_intent
+from .intents import compile_intent, drop_unasked, intent_schema, parse_intent
 from .llm import STRUCTURED_SAMPLER, LLMError, chat, short_name
 from .patcher import PatchError, extract_json
 from .prompts import intent_messages, retry_message
@@ -30,28 +30,39 @@ def spoken_from(done: list[str], skipped: int = 0) -> str:
     return s
 
 
-def run_command(level: Level, text: str, model: str, player: dict | None = None) -> dict:
+def run_command(level: Level, text: str, model: str, player: dict | None = None, trace: dict | None = None) -> dict:
+    """`trace` (optional, see traces.py) is filled in place with the prompt, every attempt and the outcome."""
     ld = level.model_dump()
     messages = intent_messages(ld, text, player)
     schema = intent_schema(ld, player)
     steps: list[dict] = []
     t0 = time.perf_counter()
     name = short_name(model)
+    attempts: list[dict] = []
+    if trace is not None:
+        trace.update(prompt=messages, schema=schema, attempts=attempts)
 
     def out(status, new_level=None, patch=None, spoken="", reason=None):
+        if trace is not None:
+            trace["outcome"] = {"status": status, "spoken": spoken, "reason": reason, "patch": patch or [],
+                                "latency_ms": int((time.perf_counter() - t0) * 1000), "steps": steps}
         return {"ok": status == "applied", "status": status, "route": ROUTE, "model": name,
                 "latency_ms": int((time.perf_counter() - t0) * 1000), "patch": patch or [],
                 "level": (new_level or level).model_dump(), "spoken": spoken, "reason": reason, "log": steps}
 
     for attempt in range(1 + MAX_MODEL_RETRIES):
         last = attempt == MAX_MODEL_RETRIES
+        att = {"retry_prompt": messages[-1]["content"] if attempt else None}
+        attempts.append(att)
         try:
             res = chat(model, messages, schema=schema, sampler=STRUCTURED_SAMPLER)
         except LLMError as e:
+            att["llm_error"] = str(e)
             steps.append({"step": "model", "model": name, "latency_ms": 0, "errors": [str(e)], "repairs": []})
             return out("error", spoken="I can't reach the model right now.", reason=str(e))
         mstep = {"step": "model", "model": res["model"], "latency_ms": res["latency_ms"], "errors": [], "repairs": []}
         steps.append(mstep)
+        att.update(model=res["model"], latency_ms=res["latency_ms"], usage=res.get("usage"), raw=res["text"])
         log.info("attempt %d raw=%s", attempt + 1, res["text"][:600])
 
         tc = time.perf_counter()
@@ -59,10 +70,16 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None)
         ed = new_level = None
         try:
             intent = parse_intent(extract_json(res["text"]))
+            att["intent"] = intent.model_dump()
+            dropped = drop_unasked(intent, text)
+            if dropped and not intent.ops:
+                raise PatchError("Every op was something the command did not ask for:\n"
+                                 + "\n".join(f"- {d}" for d in dropped)
+                                 + "\nDo only what the command asks; \"asked\" must quote the command's words.")
             if not intent.ops:
                 raise PatchError("The reply has no ops. Return at least one operation, or one 'unsupported' op explaining what can't be done.")
             ed = compile_intent(level, intent, player)
-            cstep["repairs"] = list(ed.repairs)
+            cstep["repairs"] = dropped + list(ed.repairs)
             new_level = ed.result()
             errors = list(ed.errors)
         except PatchError as e:
@@ -74,6 +91,8 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None)
 
         unsupported = [o.reason for o in intent.ops if o.op == "unsupported"] if intent else []
         patch = ed.diff() if (ed is not None and new_level is not None) else []
+        att.update(errors=list(errors), repairs=list(cstep["repairs"]), done=list(ed.done) if ed else [],
+                   unsupported=unsupported, patch=patch)
 
         if patch and not errors:
             spoken = spoken_from(ed.done)
@@ -91,6 +110,7 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None)
             errors = ["The ops changed nothing in the level. Return ops that actually make the requested change, "
                       "or one unsupported op if no operation can do it.", *(ed.repairs if ed is not None else [])]
             cstep["errors"] = errors
+            att["errors"] = errors
         if not last:
             cstep["repairs"].append("asked the model to fix the errors (1 retry)")
             messages = messages + [{"role": "assistant", "content": res["text"]}, retry_message(errors)]

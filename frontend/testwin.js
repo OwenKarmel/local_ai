@@ -29,13 +29,14 @@
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const r = await res.json();
+      if (window.Sketch2Game_setLastTrace) window.Sketch2Game_setLastTrace(r.trace_id, text);
       const ms = Math.round(performance.now() - t0);
       add(r.status === "applied" ? "ok" : "error", `[${r.status}] ${r.spoken || ""}`);
       if (r.reason) add("info", "reason: " + r.reason);
       add("info", `route=${r.route} model=${String(r.model).split("/").pop()} v${r.version} server=${r.latency_ms}ms total=${ms}ms ops=${r.patch.length}`);
       if (r.status === "applied") {
         const S = window.Sketch2Game;
-        if (typeof S.applyPatch === "function") S.applyPatch(r.patch, r.level, r.spoken); // live apply (task 7), when it exists
+        if (typeof S.applyPatch === "function") S.applyPatch(r.patch, r.level, r.spoken, r.stage); // live apply (task 7), when it exists
         else S.loadLevel(r.level);                                                       // until then: reload the level
       }
     } catch (e) {

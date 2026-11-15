@@ -1,7 +1,7 @@
 """FastAPI app: serves the frontend, holds level versions in memory, runs commands through the model.
 
 Endpoint shapes are the interface contracts in plan.md. Endpoints marked STUB return canned responses.
-With STUB_COMMANDS=1, /api/command also returns canned keyword responses (no model server needed).
+/api/command always calls the model server; there is no canned-response mode.
 """
 import io
 import json
@@ -20,46 +20,63 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config
+from . import config, traces
 from .pipeline import run_command
 from .schema import Level
 from .speech import SpeechError, transcribe as argmax_transcribe
-from .stub_commands import run_stub
 
 log = logging.getLogger("api")
 
 ROOT = Path(__file__).resolve().parent.parent
-SAMPLE = ROOT / "backend" / "levels" / "sample.json"
+LEVEL_DIR = ROOT / "backend" / "levels"
+STAGES = ["sample", "boss"]  # play order: beating a stage's goal moves on to the next one
 
 app = FastAPI(title="Voice game copilot (name TBD)")
 
 
-def _sample() -> Level:
-    return Level.model_validate_json(SAMPLE.read_text())
+def _load(stage: int) -> Level:
+    return Level.model_validate_json((LEVEL_DIR / f"{STAGES[stage]}.json").read_text())
 
 
-# In-memory version stack. Version numbers are never reused, even after undo.
-versions: list[dict] = [{"version": 1, "label": "sample level", "time": time.strftime("%H:%M:%S"), "level": _sample()}]
-_counter = [1]
+# In-memory version stacks, one per stage. Commands, undo, history and reset act on the active stage.
+# Version numbers are global and never reused, even after undo.
+_counter = [0]
+stacks: list[list[dict]] = []
+active = [0]  # index into STAGES
+
+
+def _version(level: Level, label: str) -> dict:
+    _counter[0] += 1
+    return {"version": _counter[0], "label": label, "time": time.strftime("%H:%M:%S"), "level": level}
+
+
+for _i, _name in enumerate(STAGES):
+    stacks.append([_version(_load(_i), f"{_name} level")])
+
+
+def _stack() -> list[dict]:
+    return stacks[active[0]]
 
 
 def _current() -> Level:
-    return versions[-1]["level"]
+    return _stack()[-1]["level"]
 
 
 HISTORY_DIR = ROOT / "backend" / "data" / "versions"  # gitignored; one JSON per version, for debugging
 lock = threading.Lock()  # one edit at a time
 
 
-def _push(level: Level, label: str, extra: dict | None = None) -> int:
-    _counter[0] += 1
-    versions.append({"version": _counter[0], "label": label, "time": time.strftime("%H:%M:%S"), "level": level})
+def _push(level: Level, label: str, extra: dict | None = None, stage: int | None = None) -> int:
+    v = _version(level, label)
+    stacks[active[0] if stage is None else stage].append(v)
     try:
         HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-        (HISTORY_DIR / f"v{_counter[0]:03d}.json").write_text(json.dumps({"label": label, **(extra or {}), "level": level.model_dump()}, indent=1))
+        (HISTORY_DIR / f"v{v['version']:03d}.json").write_text(
+            json.dumps({"label": label, "stage": STAGES[active[0] if stage is None else stage], **(extra or {}),
+                        "level": level.model_dump()}, indent=1))
     except OSError:
         pass
-    return _counter[0]
+    return v["version"]
 
 
 @app.get("/api/health")
@@ -76,24 +93,50 @@ def get_level():
 
 @app.post("/api/level/reset")
 def reset_level():
+    """Resets the active stage to its level file."""
     with lock:
-        _push(_sample(), "reset to sample")
+        _push(_load(active[0]), f"reset {STAGES[active[0]]}")
         return _current().model_dump()
+
+
+def _stage_info() -> dict:
+    return {"index": active[0], "count": len(STAGES), "names": [s["level"].name for s in (st[-1] for st in stacks)]}
+
+
+@app.get("/api/stage")
+def get_stage():
+    return _stage_info()
+
+
+class StageIn(BaseModel):
+    index: int
+
+
+@app.post("/api/stage")
+def set_stage(req: StageIn):
+    """Switch the active stage (e.g. after beating a level). Edits made to a stage are kept when you leave it."""
+    with lock:
+        ok = 0 <= req.index < len(STAGES)
+        if ok:
+            active[0] = req.index
+        return {"ok": ok, **_stage_info(), "level": _current().model_dump()}
 
 
 @app.get("/api/history")
 def history():
-    return {"current": versions[-1]["version"],
-            "versions": [{"version": v["version"], "label": v["label"], "time": v["time"]} for v in versions]}
+    st = _stack()
+    return {"current": st[-1]["version"], "stage": active[0],
+            "versions": [{"version": v["version"], "label": v["label"], "time": v["time"]} for v in st]}
 
 
 @app.post("/api/undo")
 def undo():
     with lock:
-        ok = len(versions) > 1
+        st = _stack()
+        ok = len(st) > 1
         if ok:
-            versions.pop()
-        return {"ok": ok, "version": versions[-1]["version"], "level": _current().model_dump()}
+            st.pop()
+        return {"ok": ok, "version": st[-1]["version"], "level": _current().model_dump()}
 
 
 # ---------- POST /api/command ----------
@@ -101,6 +144,7 @@ class PlayerIn(BaseModel):
     x: int                 # tile containing the player's center
     y: int
     has_double_jump: bool = False
+    is_big: bool = False   # picked up a "grow" powerup
 
 
 class CommandIn(BaseModel):
@@ -127,9 +171,11 @@ class CommandOut(BaseModel):
     latency_ms: int
     patch: list[dict]      # LowLevelOp[]; empty unless status == "applied"
     level: dict            # full Level after the change (unchanged if refused/error)
+    stage: int             # index of the stage (level) this command edited; see /api/stage
     spoken: str
     reason: Optional[str]  # null when applied
     log: list[LogStep]
+    trace_id: Optional[str] = None  # snapshot in backend/data/traces/; flag it with POST /api/traces/{id}/flag
 
 
 @app.post("/api/command", response_model=CommandOut)
@@ -138,20 +184,49 @@ def command(cmd: CommandIn):
     player = cmd.player.model_dump() if cmd.player else None
     with lock:
         level = _current()
+        trace = traces.new_trace(text, cmd.source, player, STAGES[active[0]], _stack()[-1]["version"], level.model_dump())
         if not text:
             r = {"ok": False, "status": "error", "route": "level", "model": "", "latency_ms": 0, "patch": [],
                  "level": level.model_dump(), "spoken": "I didn't catch that.", "reason": "Empty command.", "log": []}
-        elif config.STUB_COMMANDS:
-            r = run_stub(level, text, player)
         else:
-            r = run_command(level, text, config.CODE_MODEL, player)
-        version = versions[-1]["version"]
+            try:
+                r = run_command(level, text, config.CODE_MODEL, player, trace)
+            except Exception as e:  # record harness crashes too, then let FastAPI return the 500
+                trace["outcome"] = {"status": "crash", "reason": f"{type(e).__name__}: {e}"}
+                traces.save(trace)
+                raise
+        version = _stack()[-1]["version"]
         if r["status"] == "applied":
             version = _push(Level.model_validate(r["level"]), f"[{cmd.source}] {text}",
-                            {"command": cmd.model_dump(), "patch": r["patch"], "log": r["log"]})
+                            {"command": cmd.model_dump(), "patch": r["patch"], "log": r["log"], "trace_id": trace["id"]})
+        trace["version_after"] = version
+        trace["outcome"] = trace.get("outcome") or {"status": r["status"], "spoken": r["spoken"], "reason": r["reason"]}
+        traces.save(trace)
         log.info("command=%r status=%s route=%s model=%s latency_ms=%s ops=%d", text, r["status"], r["route"], r["model"],
                  r["latency_ms"], len(r["patch"]))
-        return CommandOut(version=version, **r)
+        return CommandOut(version=version, stage=active[0], trace_id=trace["id"], **r)
+
+
+# ---------- traces (debugging the harness; see backend/traces.py) ----------
+@app.get("/api/traces")
+def list_traces(limit: int = 50, failures: bool = False):
+    return {"traces": traces.recent(limit, failures)}
+
+
+@app.get("/api/traces/{tid}")
+def get_trace(tid: str):
+    t = traces.load(tid)
+    return t if t else JSONResponse({"detail": "no such trace"}, status_code=404)
+
+
+class FlagIn(BaseModel):
+    note: str = ""
+
+
+@app.post("/api/traces/{tid}/flag")
+def flag_trace(tid: str, req: FlagIn):
+    t = traces.flag(tid, req.note.strip())
+    return traces.summary(t) if t else JSONResponse({"detail": "no such trace"}, status_code=404)
 
 
 # ---------- POST /api/transcribe ----------
@@ -203,7 +278,7 @@ def speak(req: SpeakIn):
 @app.post("/api/patch")
 def apply_patch_direct(patch: dict):
     # STUB (dropped feature: canvas drawing). Not part of the current contracts.
-    return {"ok": True, "version": versions[-1]["version"], "message": f"(stub) would apply {len(patch.get('ops', []))} ops"}
+    return {"ok": True, "version": _stack()[-1]["version"], "message": f"(stub) would apply {len(patch.get('ops', []))} ops"}
 
 
 class BBoxTiles(BaseModel):
