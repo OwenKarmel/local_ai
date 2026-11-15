@@ -2,7 +2,8 @@
 
 Editor mutates a working copy of a level. The patch returned to the frontend is computed by diff()
 between the base level and the result, so it is always exactly the concrete LowLevelOps that were
-applied (add_entity, remove_entity, update_entity, set_physics, set_ability; see plan.md).
+applied (add_entity, remove_entity, update_entity, set_physics, set_ability, set_player_look, set_scene,
+set_reactions; see plan.md).
 """
 import copy
 import json
@@ -264,6 +265,10 @@ def diff_levels(old: dict, new: dict) -> list[dict]:
     for k, v in new.get("abilities", {}).items():
         if old.get("abilities", {}).get(k) != v:
             ops.append({"op": "set_ability", "ability": k, "settings": copy.deepcopy(v)})
+    for field, op, key in (("player_look", "set_player_look", "look"), ("scene", "set_scene", "scene"),
+                           ("reactions", "set_reactions", "reactions")):
+        if old.get(field) != new.get(field):
+            ops.append({"op": op, key: copy.deepcopy(new.get(field))})
     return ops
 
 
@@ -282,6 +287,12 @@ def apply_low_level(level: Level, ops: list[dict], player: dict | None = None) -
             ed.set_physics(op.key, op.value)
         elif op.op == "set_ability":
             ed.set_ability(op.ability, op.settings)
+        elif op.op == "set_player_look":
+            ed.d["player_look"] = op.look.model_dump()
+        elif op.op == "set_scene":
+            ed.d["scene"] = op.scene.model_dump()
+        elif op.op == "set_reactions":
+            ed.d["reactions"] = [r.model_dump() for r in op.reactions]
         else:
             e = ed.require(op.id, where)
             if e is None:

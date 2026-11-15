@@ -14,6 +14,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
+import big_player  # tools/big_player.py (this folder is on sys.path when run as a script)
+
 PACK = Path(sys.argv[1])
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "frontend" / "assets"
@@ -49,6 +51,14 @@ for color in ["green", "pink", "yellow", "purple", "beige"]:
     add(f"player_{color}", "player", use("c", p + "idle.png"), f"{color} alien astronaut, the player character", scale=0.375,
         animations={"idle": anim("c", [p + "idle.png"], 1), "run": anim("c", [p + "walk_a.png", p + "walk_b.png"], 8),
                     "jump": anim("c", [p + "jump.png"], 1), "hit": anim("c", [p + "hit.png"], 1)})
+
+# Grown player for the grow power-up: taller green alien (CC0 derivative, see tools/big_player.py).
+big = big_player.make(SPR, "green")
+used.update(big)
+bf = {n.removeprefix("character_big_green_").removesuffix(".png"): n for n in big}
+add("player_big_green", "player_big", bf["idle"], "tall green alien astronaut with antenna, star badge and belt: the grown player (grow power-up)",
+    scale=0.375, animations={"idle": {"frames": [bf["idle"]], "fps": 1}, "run": {"frames": [bf["walk_a"], bf["walk_b"]], "fps": 8},
+                             "jump": {"frames": [bf["jump"]], "fps": 1}, "hit": {"frames": [bf["hit"]], "fps": 1}})
 
 # ---- platform tilesets (64x64 tiles) ----
 LOOK = {"grass": "green grass on brown dirt", "dirt": "brown dirt", "sand": "yellow desert sand", "snow": "white snow on ice-blue ground",
@@ -97,7 +107,7 @@ for c in ["blue", "green", "red", "yellow"]:
 add("powerup_star", "powerup", use("t", "star.png"), "gold star (default double-jump power-up)", scale=0.5)
 add("powerup_heart", "powerup", use("t", "heart.png"), "red heart", scale=0.5)
 add("powerup_spring", "powerup", use("t", "spring.png"), "metal spring", scale=0.5)
-add("powerup_mushroom_red", "powerup", use("t", "mushroom_red.png"), "red mushroom", scale=0.5)
+add("powerup_mushroom_red", "powerup", use("t", "mushroom_red.png"), "red mushroom (default grow power-up)", scale=0.5)
 add("powerup_mushroom_brown", "powerup", use("t", "mushroom_brown.png"), "brown mushroom", scale=0.5)
 
 # ---- goal ----
@@ -142,14 +152,14 @@ for f in SPR.glob("*.png"):  # drop files from older runs
         f.unlink()
 
 catalog = {
-    "source": "Kenney New Platformer Pack 1.1 (kenney.nl), CC0. See sprites/License.txt. ball_white.png, effect_*.png are derived/generated.",
+    "source": "Kenney New Platformer Pack 1.1 (kenney.nl), CC0. See sprites/License.txt. ball_white.png, effect_*.png, character_big_*.png are derived/generated.",
     "defaults": {"player": "player_green", "platform": "platform_grass", "spikes": "spikes", "lava": "lava", "enemy": "enemy_slime_purple",
-                 "coin": "coin_gold", "double_jump": "powerup_star", "goal": "flag_green", "projectile": "fireball_orange"},
+                 "coin": "coin_gold", "double_jump": "powerup_star", "grow": "powerup_mushroom_red", "player_big": "player_big_green", "goal": "flag_green", "projectile": "fireball_orange"},
     "sprites": entries,
 }
 (OUT / "catalog.json").write_text(json.dumps(catalog, indent=1) + "\n")
 lines = ["# Sprite catalog: name: description. Use a name as an entity's \"sprite\". \"tint\" is any hex color like #3399ff."]
-for t in ["player", "tile", "hazard", "enemy", "coin", "powerup", "goal", "projectile"]:
+for t in ["player", "player_big", "tile", "hazard", "enemy", "coin", "powerup", "goal", "projectile"]:
     lines.append(f"[{t}]")
     lines += [f"{e['name']}: {e['description']}" for e in entries if e["type"] == t]
 (OUT / "catalog.txt").write_text("\n".join(lines) + "\n")

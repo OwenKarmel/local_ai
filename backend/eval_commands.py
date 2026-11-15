@@ -48,21 +48,31 @@ def _ahead(px):
     return check
 
 
-# (command, player, check(before, after) -> bool). Checks test intent, not exact numbers.
+# (command, player, check(before, after, response) -> bool). Each case catches a regression we have seen.
+def _no_phys(b, a):
+    return a.physics == b.physics
+
+
+def _region_hit(new, name):
+    lo, hi = R[name]
+    return any(lo <= e.x < hi for e in new)
+
+
 CASES = [
-    ("make the gaps bigger", None, lambda b, a: len(_gapw(a)) == len(_gapw(b)) and all(x > y for x, y in zip(_gapw(a), _gapw(b)))),
-    ("add three enemies near the end", None, lambda b, a: len(_new(b, a, "enemy")) == 3 and all(e.x >= R["end"][0] for e in _new(b, a, "enemy"))),
-    ("make the first gap smaller", None, lambda b, a: sum(_gapw(a)) < sum(_gapw(b))),
-    ("put spikes on the floating platforms", None, lambda b, a: len(_new(b, a, "spikes")) >= 2),
-    ("make the enemies faster", None, lambda b, a: all(e.props.get("speed", 60) > {x.id: x for x in _of(b, "enemy")}[e.id].props.get("speed", 60) for e in _of(a, "enemy"))),
-    ("add some coins in the middle", None, lambda b, a: len(_new(b, a, "coin")) >= 1 and all(R["middle"][0] <= e.x < R["middle"][1] for e in _new(b, a, "coin"))),
-    ("make jumping higher", None, lambda b, a: a.physics.jump_velocity > b.physics.jump_velocity),
-    ("remove the lava", None, lambda b, a: not _of(a, "lava")),
-    ("make the level harder", None, None),  # judged by hand; reported as ops
-    ("make the level a bit easier", None, None),
-    ("lower the gravity", None, lambda b, a: a.physics.gravity < b.physics.gravity),
-    ("add an enemy right in front of me", P5, lambda b, a: len(_new(b, a, "enemy")) == 1 and all(P5["x"] + 1 <= e.x <= P5["x"] + 6 for e in _new(b, a, "enemy"))),
-    ("make this harder", P18, _ahead(P18["x"])),
+    ("make the gaps bigger", None, lambda b, a, r: len(_gapw(a)) == len(_gapw(b)) and all(x > y for x, y in zip(_gapw(a), _gapw(b)))),
+    ("make the first gap smaller", None, lambda b, a, r: sum(_gapw(a)) < sum(_gapw(b))),
+    ("add three enemies near the end", None, lambda b, a, r: len(_new(b, a, "enemy")) == 3 and all(e.x >= R["end"][0] for e in _new(b, a, "enemy"))),
+    ("add enemies throughout the map", None, lambda b, a, r: all(_region_hit(_new(b, a, "enemy"), k) for k in ("start", "middle", "end"))),
+    ("add an enemy right in front of me", P5, lambda b, a, r: len(_new(b, a, "enemy")) == 1 and all(P5["x"] + 1 <= e.x <= P5["x"] + 6 for e in _new(b, a, "enemy"))),
+    ("make this harder", P18, lambda b, a, r: _ahead(P18["x"])(b, a) and _no_phys(b, a)),
+    ("make it a bit easier", P18, lambda b, a, r: _ahead(P18["x"])(b, a) and _no_phys(b, a)),
+    ("lower the gravity", None, lambda b, a, r: a.physics.gravity < b.physics.gravity),
+    ("add a floating platform above the first gap", None, lambda b, a, r: len(_new(b, a, "platform")) == 1),
+    ("remove the lava", None, lambda b, a, r: not _of(a, "lava")),
+    ("give me a mushroom", P5, lambda b, a, r: len(_new(b, a, "grow")) >= 1),
+    ("make the enemies purple", None, lambda b, a, r: _no_phys(b, a) and not _new(b, a, "enemy") and r["status"] == "applied"
+     and any("tint" in str(o) for o in r["patch"])),
+    ("play me a song", None, lambda b, a, r: r["status"] == "refused"),
 ]
 
 
@@ -71,7 +81,7 @@ def speed(model: str) -> dict:
     chat(model, [{"role": "user", "content": "Say hi."}], max_tokens=4)  # warm-up / load
     r = chat(model, [{"role": "user", "content": "Write the numbers from 1 to 150 separated by spaces."}], max_tokens=300)
     dec = r["usage"].get("completion_tokens", 0) / (r["latency_ms"] / 1000)
-    p = chat(model, intent_messages(SAMPLE.model_dump(), "make the gaps bigger", P18), max_tokens=1)
+    p = chat(model, intent_messages(SAMPLE.model_dump(), "make the gaps bigger", P18), max_tokens=1)  # prompt size probe
     pre = p["usage"].get("prompt_tokens", 0) / (p["latency_ms"] / 1000)
     return {"decode_tok_s": round(dec, 1), "prefill_tok_s": round(pre), "prompt_tokens": p["usage"].get("prompt_tokens")}
 
@@ -92,7 +102,7 @@ def main():
             r = run_command(SAMPLE, cmd, model, player)
             calls = sum(1 for s in r["log"] if s["step"] == "model")
             after = Level.model_validate(r["level"])
-            passed = None if (check is None or not r["ok"]) else bool(check(SAMPLE, after))
+            passed = None if check is None else bool(check(SAMPLE, after, r))
             row = {"command": cmd, "player": player, "status": r["status"], "ok": r["ok"], "check": passed, "calls": calls,
                    "latency_s": round(r["latency_ms"] / 1000, 1), "spoken": r["spoken"], "reason": r["reason"],
                    "patch": r["patch"], "log": r["log"]}
