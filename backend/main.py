@@ -1,7 +1,7 @@
 """FastAPI app: serves the frontend, holds level versions in memory, runs commands through the model.
 
 Endpoint shapes are the interface contracts in plan.md. Endpoints marked STUB return canned responses.
-With STUB_COMMANDS=1, /api/command also returns canned keyword responses (no model server needed).
+/api/command always calls the model server; there is no canned-response mode.
 """
 import io
 import json
@@ -24,7 +24,6 @@ from . import config
 from .pipeline import run_command
 from .schema import Level
 from .speech import SpeechError, transcribe as argmax_transcribe
-from .stub_commands import run_stub
 
 log = logging.getLogger("api")
 
@@ -141,8 +140,6 @@ def command(cmd: CommandIn):
         if not text:
             r = {"ok": False, "status": "error", "route": "level", "model": "", "latency_ms": 0, "patch": [],
                  "level": level.model_dump(), "spoken": "I didn't catch that.", "reason": "Empty command.", "log": []}
-        elif config.STUB_COMMANDS:
-            r = run_stub(level, text, player)
         else:
             r = run_command(level, text, config.CODE_MODEL, player)
         version = versions[-1]["version"]

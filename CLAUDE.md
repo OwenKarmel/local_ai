@@ -15,7 +15,7 @@ Our code provides only:
 **Test for any code:** if it only exists to handle one specific command, it's hardcoding and doesn't belong. If many different commands could use it, it's a building block.
 - Prompt examples must not match the demo commands (e.g. show a bouncing-coin behavior, not fireballs).
 - When a demo beat fails more than 1 time in 5, fix the API, the prompt context or the examples, never by hardcoding the behavior. If it still fails Sunday morning, cut the beat rather than fake it.
-- Keyword stubs exist only behind `STUB_COMMANDS=1`, for frontend work without a model.
+- There is no keyword stub for commands: `/api/command` always calls the model server.
 
 ## Project
 An offline voice copilot that edits your game while you play. A 2D platformer changes live while you play it. Hold V, say "lower the gravity", "make this harder" or "give me fireballs", and the running game changes without restarting. The copilot talks back through text-to-speech, and it refuses changes that would make the level impossible, explaining why out loud. It recreates Rosebud AI (edit games by chatting with a cloud AI) fully on-device. Built for the Cornell Local AI Hackathon; must use Bonsai (PrismML) and Argmax. Working beats polished.
@@ -103,7 +103,7 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `tools/build_catalog.py` | Rebuilds `frontend/assets/` from a downloaded Kenney pack |
 | `frontend/mechanics.js` | Behavior registry (`patrol`). The only file model-written code may go in |
 | `frontend/vendor/phaser.min.js` | Phaser 3.80.1, bundled locally |
-| `testbonsai/` | Dev-only: run Bonsai 2 GGUF with llama.cpp (CUDA) + Open WebUI on a non-Mac machine (WSL2). Not part of the demo |
+| `testbonsai/` | Dev-only: run Bonsai 2 GGUF (2B/9B) with llama.cpp (CUDA) on a non-Mac machine (WSL2); `run-game.sh` wires the backend to it. Not part of the demo |
 
 | `backend/llm.py` | Client for the local model server; logs model + latency |
 | `backend/summary.py` | Level analysis + the text summary the model sees (ground, gaps, platforms, objects, regions, player) |
@@ -112,7 +112,6 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/pipeline.py` | `run_command(level, text, model, player)`: prompt → model → intents → fixes → validate → contract response. Max 1 model retry |
 | `backend/prompts.py` | System prompt + 2 worked examples |
 | `backend/speech.py` | `/api/transcribe` helper: ffmpeg convert + pad, forward to the Argmax server |
-| `backend/stub_commands.py` | Canned keyword responses for `/api/command` when `STUB_COMMANDS=1` |
 | `backend/eval_commands.py` | `python -m backend.eval_commands --models 4B`: success, latency and tok/s per model |
 
 ## Contracts
@@ -155,7 +154,6 @@ git clone https://github.com/OwenKarmel/local_ai.git; cd local_ai
 py -3 -m venv .venv                       # or: python -m venv .venv
 .venv\Scripts\Activate.ps1                # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 pip install -r backend/requirements.txt
-$env:STUB_COMMANDS = "1"                  # canned /api/command responses, no model server
 $env:STUB_SPEECH = "1"                    # fixed /api/transcribe text, no Argmax
 uvicorn backend.main:app --reload --port 8000
 # new PowerShell window:
@@ -168,16 +166,16 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/command -ContentTy
 git clone https://github.com/OwenKarmel/local_ai.git && cd local_ai
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
-STUB_COMMANDS=1 STUB_SPEECH=1 uvicorn backend.main:app --reload --port 8000     # then open http://localhost:8000
+STUB_SPEECH=1 uvicorn backend.main:app --reload --port 8000     # then open http://localhost:8000
 ```
 - Speech needs Argmax (Mac only). Also set `STUB_SPEECH=1` (PowerShell: `$env:STUB_SPEECH = "1"`) so `/api/transcribe` returns fixed text; without it, it returns HTTP 503. `/api/speak` is a stub (beep wav) until O4.
-- Without `STUB_COMMANDS=1`, `/api/command` tries the model server and returns `status: "error"` ("Model server not reachable").
+- `/api/command` always calls the model server (no stub mode); without one it returns `status: "error"` ("Model server not reachable"). On a non-Mac machine with the Bonsai GGUFs (Owen's WSL2 setup), `testbonsai/run-game.sh [2b|9b] [--no-think]` (default 2b; `--no-think` skips model reasoning, much faster) starts llama-server and the backend wired to it. Otherwise use Ashwin's model server (below).
 - No model server, Argmax, `~/models` folder or `.env` is needed.
 
 **Optional: real models from another machine (development only).** The demo runs entirely on Ashwin's Mac. For testing against the real 4B from Owen's machine:
 1. Ashwin starts the model server on the local network: `~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit --host 0.0.0.0 --port 1234`. Find the Mac's address with `ipconfig getifaddr en0`, and allow Python through the macOS firewall prompt.
 2. Owen gets the model id: `Invoke-RestMethod http://<mac-ip>:1234/v1/models` (it's an absolute path on Ashwin's Mac).
-3. Owen sets `$env:BONSAI_BASE_URL = "http://<mac-ip>:1234/v1"` and `$env:CODE_MODEL` / `$env:FAST_MODEL` to that id, clears `STUB_COMMANDS`, and runs the backend as usual.
+3. Owen sets `$env:BONSAI_BASE_URL = "http://<mac-ip>:1234/v1"` and `$env:CODE_MODEL` / `$env:FAST_MODEL` to that id, and runs the backend as usual.
 - Both machines must be on the same network. Venue Wi-Fi often blocks device-to-device traffic; a phone hotspot works.
 - The server has no authentication: only do this on a network you trust, and go back to `--host 127.0.0.1` afterwards.
 - Both people sharing one model server slows each other's requests.
@@ -203,7 +201,7 @@ cd -
 # 5. Model server (separate terminal; works offline)
 ~/models/mlx-venv/bin/python -m mlx_vlm.server --model ~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit --host 127.0.0.1 --port 1234
 
-# 6. Backend (separate terminal, from the repo root). Without the model server: STUB_COMMANDS=1 uvicorn ...
+# 6. Backend (separate terminal, from the repo root)
 source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000
 
 # 7. Open the game
@@ -211,7 +209,7 @@ open http://localhost:8000
 ```
 No `.env` needed. Check with `curl localhost:8000/api/health`. Try a command: `curl -s localhost:8000/api/command -H 'Content-Type: application/json' -d '{"text":"lower the gravity","source":"typed","speaker":null,"player":null}'`.
 
-**No model server?** Start the backend with `STUB_COMMANDS=1 uvicorn backend.main:app --reload --port 8000`. `/api/command` then returns canned keyword responses (plan.md → "Stubs").
+**No model server?** The game and every other endpoint still work; `/api/command` returns `status: "error"`.
 
 ### Argmax setup (speech; macOS 14+, TTSKit needs 15+, Xcode 16+)
 Lives outside the repo in `~/argmax`. One-time, needs internet, about 3 GB (build 1.3 GB, Whisper models 740 MB, TTS model 1 GB):
@@ -250,16 +248,16 @@ Controls: arrows/WASD move, Space/Up/W jump, R restart. `--reload` watches `.py`
 | `FAST_BASE_URL` | same as `BONSAI_BASE_URL`. Point it at a second `mlx_vlm.server` (e.g. port 1235, loaded with the 2B) to keep both models in memory |
 | `CODE_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit` (level route) |
 | `FAST_MODEL` | `~/models/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit` (fast route, A4). Same model on purpose: one server, no swapping |
-| `STUB_COMMANDS` | unset. `1` = `/api/command` returns canned keyword responses, no model server needed |
 | `BONSAI_MODELS_DIR` | `~/models/prism-ml` (base for the two defaults above) |
 | `ARGMAX_URL` | `http://localhost:50060/v1` (`argmax-cli serve` default port) |
 | `STUB_SPEECH` | unset. `1` = `/api/transcribe` returns fixed text, no Argmax needed |
 
 Model notes:
 - Bonsai 2 MLX packs need **mlx-vlm ≥ 0.7.8**; released mlx-lm (and LM Studio's MLX engine) can't load them yet.
+| `NO_THINKING` | unset. `1` = send `chat_template_kwargs.enable_thinking=false` so the model skips its reasoning phase (about 2.7x faster on llama-server with the 2B) |
 - Model ids are the absolute folder paths, as listed at `GET $BONSAI_BASE_URL/models`.
 - One server process keeps one model loaded; requesting another swaps it (about 4 s). It honors `response_format: json_schema`.
-- Thinking is off by default. Send sampler params per request: `temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.5`.
+- Thinking: off by default on mlx_vlm.server; on by default on llama-server (Bonsai GGUF template). `NO_THINKING=1` turns it off on any server. Send sampler params per request: `temperature 0.7, top_p 0.8, top_k 20, presence_penalty 1.5`.
 - Sizes on disk: 2B 1.2 GB, 4B 1.9 GB, 9B 3.5 GB.
 
 ## Conventions
