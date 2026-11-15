@@ -16,7 +16,7 @@ Acceptance checks test properties, not exact outputs, since model output varies.
 | 3 | "Make this harder." Bonsai decides how | `status` applied; every new or changed object is ahead of the player; the checker passes (level still beatable) |
 | 4 | "Give me fireballs." Bonsai writes the ability in mechanics.js using the mechanics API | Code passes the sandbox on attempt 1 or 2; pressing its key spawns a projectile; a projectile defeats an enemy |
 | 5 | Cursor visible with its tile highlighted. Hover and say "put a block here" | A new solid block occupies the cursor tile (or the nearest free tile if the cursor is on something) |
-| 6 | "Make the next gap 10 tiles" is refused and explained out loud. "Let me jump higher." Then a wider-gap request that was impossible before goes through | First: `refused` with a reason naming the jump limit, and spoken. Second: jump physics increased. Third: applied, the gap is wider than the old limit and within the new one, and the checker passes |
+| 6 | "Make the platforms move." Bonsai writes the behavior (model-written code through the sandbox); the player rides a moving platform. Then "let me jump higher" | First: applied, platforms visibly move, the player rides one without sliding or jittering, sandbox passes (checker "not verified": movement isn't checked). Second: jump physics increased; the reach line in the prompt changes |
 | 7 | Reach the flag | Win screen |
 | 8 | Closing stats: model size, latencies, attempts, lines of code written, evaluation results | Stats HUD and demo-check success rates on screen; all numbers measured |
 
@@ -34,14 +34,15 @@ Status: `todo`, `doing (<name>)`, `in review (PR #n)`, `done`. **Claim a task by
 | 7 | Live patch application: apply every LowLevelOp to the running scene, keeping player position, velocity, score, power-ups; never spawn on the player; fall back to reload | 3–6 | — | `frontend/game.js` | All op types apply mid-run without restart | in review |
 | 8 | Cursor context: `/api/command` accepts `cursor: {x, y}` in tiles or null, passed to the model as context | 5 | — | `backend/` | "Put a block here" lands on the cursor tile in the demo check | todo |
 | 9 | Cursor overlay: visible pointer plus highlighted tile, sent with every command | 5 | 8 | `frontend/` | Highlight follows the mouse; requests carry `cursor` | todo |
-| 10 | Shared physics config read by game.js and the checker (gravity, jump velocity, run speed, player size, double-jump strength, coyote time, jump buffer, jump cut, max fall speed) | 6 | — | new shared file, `frontend/game.js` | Changing jump velocity in the config changes the game and the checker | todo |
-| 11 | Playability checker and refusals: tile grid, jump arcs matching the game, reachability from spawn and the player position with double-jump state, specific reasons. Interface below. Test level with gaps 4/5/6/7 and heights 2/3/4 verified by hand | 3, 6 | 10 | `backend/checker.py`, `backend/levels/jump_test.json` | Sample passes; a 10-tile gap fails with a clear reason; checker matches the hand test | todo |
-| 12 | Checker reads physics from the current level, so "let me jump higher" immediately changes what's allowed | 6 | 11 | `backend/checker.py` | Beat 6 passes in the demo check | todo |
-| 13 | Player abilities and limits in the prompt: current reach (max gap, max height, with and without double jump) from the current physics, plus the abilities in mechanics.js | 3, 6 | 10 | `backend/prompts.py`, `backend/summary.py` | Prompt numbers change after a physics change | todo |
+| 10 | ~~Shared physics config~~ | — | — | — | — | moved to Later (11-14 21:30) |
+| 11 | ~~Playability checker and refusals~~ | — | — | — | — | moved to Later (11-14 21:30); replaced by task 13's lightweight safety layer |
+| 12 | ~~Checker reads physics from the current level~~ | — | — | — | — | moved to Later (11-14 21:30) |
+| 13 | Lightweight safety layer: backend computes the player's max jump distance and height from the current level's physics (`backend/reach.py`) and puts them in every prompt; any patch that makes a gap wider than the max jump is rejected with a clear reason, one retry, then refused | 3, 6 | — | `backend/reach.py`, `backend/pipeline.py`, `backend/summary.py` | "make the next gap 10 tiles" is refused out loud; after "let me jump higher" a wider gap within the new limit goes through | in review (this PR) |
 | 14 | 🍎 Copilot voice: `/api/speak` with TTSKit (long-running process), refusal vs normal style; immediate spoken acknowledgment ("On it") while the model works | 3–6 | 2 | `backend/`, `frontend/voice.js` | Confirmations and refusals are spoken offline; "On it" plays within 1 s of releasing V | todo |
 | 15 | Stats in the `/api/command` response (contract above) | 8 | — | `backend/pipeline.py`, `backend/main.py` | Every response has `stats`; unmeasured fields are null | todo |
 | 16 | Stats HUD (spec below) | 8, all | 15 | `frontend/` | Readable on video; refusal and rollback banners match what the copilot says | todo |
-| 17 | Demo check script `scripts/demo_check.py` (spec below) | all | 1 | `scripts/` | `--quick`, `--full`, `--beat N --runs K` work; Beat 6 shows "waiting on checker" until 11–12 merge | todo |
+| 17 | Demo check script `scripts/demo_check.py` (spec below) | all | 1 | `scripts/` | `--quick`, `--full`, `--beat N --runs K` work | todo |
+| 22 | Moving solid bodies in the mechanics API, plus "make the platforms move" through the sandbox. The player rides a moving platform without sliding or jittering. Edits that add movement report checker "not verified" | 6 | 5, 6 | `frontend/mechanics.js`, `frontend/game.js` | Beat 6 passes in the demo check | todo |
 | 18 | Latency work that doesn't hardcode behavior: shorter prompts, compact level summary, prompt caching if the model server supports it, keeping the model loaded and warm | all | — | `backend/prompts.py`, `backend/summary.py`, server flags | Median command latency measured before and after | todo |
 | 19 | 🍎 Offline run of the full flow on the demo Mac | 1 | 2, 3, 14 | — | Every beat runs with Wi-Fi off | todo |
 | 20 | 🍎 Backup take, as soon as Beats 2–5 work (before the checker is done) | all | 3, 6, 7, 9 | — | Rough take recorded | todo |
@@ -56,29 +57,29 @@ In a corner of the game, large and readable on video:
 - **"Show code" toggle:** displays the code the model just wrote.
 
 ### Demo check spec (task 17)
-`scripts/demo_check.py` runs Beats 3–6 in order against the live backend, with realistic player and cursor positions, and checks each beat's acceptance properties. Prints progress as it goes, so it can run in the background.
+`scripts/demo_check.py` runs Beats 3–6 in order (Beat 6 = "make the platforms move", then "let me jump higher") against the live backend, with realistic player and cursor positions, and checks each beat's acceptance properties. Prints progress as it goes, so it can run in the background.
 - `--quick`: one pass. Run after every merge.
 - `--full`: 5 passes with a success rate per beat. Run before recording and after prompt or API changes.
 - `--beat N --runs K`: repeat one beat while working on it.
 
 Testing only: during the demo each command runs once, with a retry only if the first attempt fails. **If a beat fails more than 1 time in 5, fix the API, the prompt context or the examples, never by hardcoding. If it still fails Sunday morning, cut the beat rather than fake it.**
 
-### Checker interface (task 11 → pipeline)
-The checker lives in `backend/checker.py`; the pipeline calls it, so the two can be built in parallel.
-```python
-def check(level: dict, player: dict | None) -> dict:
-    """level = Level.model_dump(); player = {"x", "y", "has_double_jump"} in tiles, or None.
-    Returns {"ok": bool, "reason": str | None, "spoken": str | None}.
-    reason: specific, e.g. "gap2 is 8 tiles wide; the longest jump with current physics is 5 tiles."
-    spoken: one short sentence for the copilot, e.g. "Can't do that: you could only jump 5 tiles."
-    Physics numbers come from the shared config (A3), never hardcoded."""
-```
-
-**Parallel work:** tasks 5, 7, 9, 10, 11 and 16 run on any machine (`STUB_SPEECH=1`; commands need a model server, e.g. Ashwin's over the local network). Coordination points: the shared physics config (10 → 11, 12, 13), the checker interface above, the mechanics-code op (5 ↔ 6 ↔ 7), and `cursor` (8 ↔ 9).
+**Parallel work:** tasks 5, 7, 9, 10, 11 and 16 run on any machine (`STUB_SPEECH=1`; commands need a model server, e.g. Ashwin's over the local network). Coordination points: the mechanics-code op (5 ↔ 6 ↔ 7, 22) and `cursor` (8 ↔ 9).
 
 
 ## Later
 Not needed for any beat. Don't start these until every beat passes.
+- **Full playability checker** (old tasks 10–12: shared physics config, reachability search, checker reads current physics). Cut from the demo 11-14 21:30; task 13's gap check covers the main risk. Its planned interface:
+  The checker lives in `backend/checker.py`; the pipeline calls it, so the two can be built in parallel.
+  ```python
+  def check(level: dict, player: dict | None) -> dict:
+      """level = Level.model_dump(); player = {"x", "y", "has_double_jump"} in tiles, or None.
+      Returns {"ok": bool, "reason": str | None, "spoken": str | None}.
+      reason: specific, e.g. "gap2 is 8 tiles wide; the longest jump with current physics is 5 tiles."
+      spoken: one short sentence for the copilot, e.g. "Can't do that: you could only jump 5 tiles."
+      Physics numbers come from the shared config (A3), never hardcoded."""
+  ```
+
 - Second-voice features: SpeakerKit chaos mode, speaker permissions (old O5, A7)
 - Companion character
 - Canvas drawing and vision labeling of sketches
@@ -96,7 +97,7 @@ Not needed for any beat. Don't start these until every beat passes.
 | 0:25–0:40 | "Make this harder." Changes appear ahead; copilot says what it added; HUD shows model and latency |
 | 0:40–0:55 | "Give me fireballs." Toggle "show code" briefly to show the lines Bonsai wrote; blast the new enemies |
 | 0:55–1:10 | Hover over a spot: "put a block here." Block appears on the highlighted tile |
-| 1:10–1:30 | "Make the next gap 10 tiles": refused out loud with the reason. "Let me jump higher." The wider gap now goes through within the new limit |
+| 1:10–1:30 | "Make the platforms move": Bonsai writes the behavior (toggle "show code"); ride one. "Let me jump higher": the copilot confirms; the HUD shows the new reach |
 | 1:30–1:45 | Reach the flag |
 | 1:45–2:00 | Stats: model size, latency history, attempts, code lines, demo-check success rates, "all on-device" |
 
@@ -259,6 +260,9 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
 | 11-14 16:40 | Pre-written fireball ability to be removed (task 4); abilities are model-written in mechanics.js through the sandbox (tasks 5–6) | Same principle. `set_ability` stays as a generic settings op |
 | 11-14 16:40 | `/api/command` request gains `cursor: {x, y} \| null`; response gains `stats` (only measured numbers, null otherwise) | Beat 5 needs the cursor tile; Beat 8 and the HUD need honest stats |
 | 11-14 16:40 | Prompt examples must not match demo commands | Otherwise the demo shows memorized examples, not generality |
+| 11-14 21:30 | **Full playability checker and the refusal beat cut from the demo.** Beat 6 is now "make the platforms move" (model-written behavior through the sandbox) followed by "let me jump higher". The checker tasks (10–12) moved to Later; Owen told (the task was unclaimed) | Not enough time to build and hand-verify a reachability checker before Sunday; model-written behavior is a stronger demo of the core idea |
+| 11-14 21:30 | **Lightweight safety layer instead** (task 13, `backend/reach.py`): the backend computes max jump distance and height from the current level's physics and puts them in every prompt; a patch that makes a gap wider than the max jump is rejected with a reason, retried once, then refused. Movement constants (coyote 100 ms, player 24 px, double jump 0.9×) are mirrored from game.js ("keep in sync") since the shared config was cut | Covers the most likely way an edit makes the level unbeatable. Default physics: 5-tile gaps, 4-tile ledges (9 / 7 with double jump), computed and not hand-verified |
+| 11-14 21:30 | Prompt: for a vague command every op's `asked` quotes the whole command | The 4B paraphrased ("increase enemy speed"), `drop_unasked` dropped every op, and "make this harder" ended up refused (3/3). After the rule: applied ahead of the player, 2/2 |
 | 11-14 16:10 | **Intent reply: `plan` (was `explanation`) is required and comes before `ops`; `ops` needs at least one item** | Constrained decoding writes required fields first, so the optional explanation came after the ops as a justification. Planning first fixed op choice on the 2B, and empty `ops` cost a retry. Old `explanation` replies still parse |
 | 11-14 16:10 | Op selection uses a low-temperature sampler (`temperature 0.2`, no presence penalty); chat keeps the Bonsai defaults | Picking from a fixed menu wants the most likely reading; presence penalty punishes the repeated tokens JSON needs |
 | 11-14 16:10 | **New intent ops `add_platform` (over a gap, region or platform) and `add_pickup` (`double_jump`)**. Building blocks: code computes placement | With no op for them, the model substituted coins for platforms and fireballs or gravity for double jumps, and reported success |

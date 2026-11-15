@@ -8,7 +8,7 @@ Standing instructions for every Claude Code session on this repo. Ashwin and Owe
 Our code provides only:
 - **Building blocks:** the engine plus a documented mechanics API the model codes against (spawn entities and projectiles, physics bodies, velocity, collisions, input keys, timers, entity properties, tint and sprite). Rich enough that typical abilities take the model 10–30 lines.
 - **Context in the prompt:** compact level summary, current physics, the player's current abilities and limits, player position, cursor tile.
-- **Guardrails:** schema validation, the code sandbox (model code only in mechanics.js, syntax check, runtime error capture, automatic rollback), the playability checker, and at most one retry that feeds the error back to the model.
+- **Guardrails:** schema validation, the code sandbox (model code only in mechanics.js, syntax check, runtime error capture, automatic rollback), the gap check (no gap wider than the player can jump, `backend/reach.py`), and at most one retry that feeds the error back to the model.
 - **Measurement:** stats on every change.
 - **An immediate spoken acknowledgment** ("On it") while the model works. This is feedback, not behavior.
 
@@ -34,7 +34,7 @@ Hold V → record audio → POST /api/transcribe (Argmax WhisperKit, local) → 
                 "level" (geometry, entities; CODE_MODEL, level summary)
       → model returns intent-level ops
       → backend converts to concrete LowLevelOps, validates the schema
-      → playability checker
+      → gap check (backend/reach.py: no gap wider than the max jump)
       → applied: patch + new level + short spoken message
         refused: reason + spoken message
   → frontend applies the patch live to the running scene (keeps position, score, power-ups)
@@ -42,9 +42,9 @@ Hold V → record audio → POST /api/transcribe (Argmax WhisperKit, local) → 
 ```
 Key principles:
 - **The model chooses intent; deterministic code does geometry and enforces rules.**
-- **Every change goes through the playability checker.** Nothing reaches the game unless the goal is still reachable.
+- **Every change goes through the gap check** (`backend/reach.py`): the prompt carries the player's current reach, and a patch that makes a gap wider than the max jump is rejected (one retry, then refused). The full playability checker is under Later in plan.md.
 - **Edits apply live.** Full level reload is only a fallback if live apply fails.
-- **Jump physics live in ONE shared config file** read by both game.js and the checker (gravity, jump velocity, run speed, player size, double-jump strength, coyote time). Never duplicate these numbers.
+- **Jump physics:** gravity, jump velocity and run speed live in the level. The few movement constants the reach estimate needs (coyote time, player width, double-jump 0.9×) are mirrored in `backend/reach.py` from `frontend/game.js`; change both together.
 - **Latency is a first-class concern.** Log model, route and latency for every command.
 
 Level state lives on the backend, in memory, as a stack of versions (loaded from `sample.json` at startup). Frontend and backend meet only through the HTTP contracts in plan.md.
@@ -52,7 +52,7 @@ Level state lives on the backend, in memory, as a stack of versions (loaded from
 ## Ownership
 - **Tasks are claimed by number** on plan.md's board (status `doing (<name>)`) before starting. Whoever claims a task owns its files until it merges. Don't edit files another open task has claimed; describe the change in your PR instead.
 - **Mac-only work** (MLX models, Argmax, recording; marked 🍎 on the board) happens on Ashwin's Mac, the demo machine. Owen has no Mac (Acer laptop) and works against the stubs, or against Ashwin's model server over the local network.
-- **Shared** (heads-up to the other person before changing): `CLAUDE.md`, `plan.md`, the shared physics config, the level schema (`backend/schema.py` and the JSON below), the interface contracts, the checker interface.
+- **Shared** (heads-up to the other person before changing): `CLAUDE.md`, `plan.md`, the shared physics config, the level schema (`backend/schema.py` and the JSON below), the interface contracts.
 
 ## Rules
 - Model-written code may only go in `frontend/mechanics.js`, and only through the sandbox (syntax check, runtime error capture, automatic rollback).
@@ -115,6 +115,7 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/patcher.py` | `Editor` (working copy + automatic fixes), `diff_levels` (old vs new → LowLevelOps), `apply_low_level` |
 | `backend/pipeline.py` | `run_command(level, text, model, player)`: prompt → model → intents → fixes → validate → contract response. Max 1 model retry |
 | `backend/prompts.py` | System prompt + 2 worked examples |
+| `backend/reach.py` | Player reach (max gap and height) from the current physics, for the prompt; `gap_violations` rejects gaps wider than the max jump |
 | `backend/speech.py` | `/api/transcribe` helper: ffmpeg convert + pad, forward to the Argmax server |
 | `backend/traces.py` | Saves one JSON snapshot per command to `backend/data/traces/` (prompt, raw replies, errors, patch, outcome, player flag). `python -m backend.traces [--failures] \| show <id> \| replay <id>` |
 | `backend/eval_commands.py` | `python -m backend.eval_commands --models 4B`: success, latency and tok/s per model |

@@ -36,7 +36,7 @@ def _k(kind: str) -> str:
 
 
 INTENT_SYSTEM = """You are a game copilot editing a 2D platformer while it is played. Choose high-level ops; the engine computes positions.
-Input: LEVEL SUMMARY (objects with ids) + COMMAND. Reply ONLY JSON {"plan": "<few words>", "ops": [...]}. Every op has "asked": the exact command words it carries out. The JSON schema lists allowed values.
+Input: LEVEL SUMMARY (objects with ids) + COMMAND. Reply ONLY JSON {"plan": "<few words>", "ops": [...]}. Every op has "asked": the exact command words it carries out (copy them; for a vague command like "spice it up", every op quotes the whole command). The JSON schema lists allowed values.
 
 KINDS (players may name them by looks): <<K:coin>> pickup. <<K:double_jump>> powerup: one extra air jump. <<K:grow>> powerup: become big, survive one hit. <<K:spikes>>, <<K:lava>>: kill on touch. <<K:enemy>>: patrols, dies when stomped. <<K:goal>>: finish. platform: ground or ledge.
 

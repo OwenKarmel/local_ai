@@ -10,6 +10,7 @@ from .intents import compile_intent, drop_unasked, intent_schema, parse_intent
 from .llm import STRUCTURED_SAMPLER, LLMError, chat, short_name
 from .patcher import PatchError, extract_json
 from .prompts import intent_messages, retry_message
+from .reach import gap_violations, reach
 from .schema import Level
 
 log = logging.getLogger("pipeline")
@@ -68,6 +69,7 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None,
         tc = time.perf_counter()
         cstep = {"step": "convert", "model": None, "latency_ms": 0, "errors": [], "repairs": []}
         ed = new_level = None
+        too_far = []
         try:
             intent = parse_intent(extract_json(res["text"]))
             att["intent"] = intent.model_dump()
@@ -82,6 +84,11 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None,
             cstep["repairs"] = dropped + list(ed.repairs)
             new_level = ed.result()
             errors = list(ed.errors)
+            # Lightweight safety layer (backend/reach.py): no gap wider than the player can jump.
+            too_far = gap_violations(ld, new_level.model_dump())
+            if too_far:
+                errors += too_far
+                new_level = None
         except PatchError as e:
             errors = [str(e)]
             intent = None
@@ -101,8 +108,7 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None,
             steps.append({"step": "check", "model": None, "latency_ms": 0, "errors": [], "repairs": []})
             return out("applied", new_level, patch, spoken)
         if unsupported and not patch and not errors:
-            reason = (f"This request can't be expressed with the current edit operations: {unsupported[0]} "
-                      "(Refusals for unbeatable levels arrive with the playability checker.)")
+            reason = f"This request can't be expressed with the current edit operations: {unsupported[0]}"
             return out("refused", spoken=f"I can't do that yet: {unsupported[0].rstrip('.')}.", reason=reason)
         if not errors and not patch:
             # Say WHY nothing changed (e.g. "gravity is already 1200", "skipped gap1: behind the player"),
@@ -118,5 +124,10 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None,
         if patch:  # last try: keep the ops that worked, report the rest in the log
             steps.append({"step": "check", "model": None, "latency_ms": 0, "errors": [], "repairs": []})
             return out("applied", new_level, patch, spoken_from(ed.done, skipped=len(errors)))
+        if too_far:  # still too wide after the retry: refuse, and say why
+            steps.append({"step": "check", "model": None, "latency_ms": 0, "errors": list(too_far), "repairs": []})
+            mx = reach(ld["physics"] if new_level is None else new_level.model_dump()["physics"])["max_gap"]
+            return out("refused", spoken=f"Can't do that: that gap would be too wide. You can only jump {mx} tiles.",
+                       reason=too_far[0])
         return out("error", spoken="Sorry, I couldn't make that change.", reason="; ".join(errors))
     raise AssertionError("unreachable")
