@@ -12,6 +12,7 @@ Files live in backend/data/traces/ (gitignored). CLI:
 """
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -36,8 +37,19 @@ def save(trace: dict) -> None:
     try:
         TRACE_DIR.mkdir(parents=True, exist_ok=True)
         (TRACE_DIR / f"{trace['id']}.json").write_text(json.dumps(trace, indent=1, default=str))
+        _prune()
     except OSError:
         pass
+
+
+# Keep only the newest traces so they can't fill the disk (each holds the full prompt, about 10-20 KB).
+MAX_TRACES = int(os.environ.get("TRACE_KEEP", "300"))
+
+
+def _prune() -> None:
+    files = sorted(TRACE_DIR.glob("*.json"))  # ids start with a timestamp, so name order = time order
+    for p in files[:-MAX_TRACES] if len(files) > MAX_TRACES else []:
+        p.unlink(missing_ok=True)
 
 
 def path_for(tid: str) -> Path | None:
