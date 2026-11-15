@@ -38,6 +38,7 @@
     #voice-reply.refused, #voice-reply.error { color: #ff7b7b; }
     #cmd-form { display: flex; gap: 6px; margin-top: 6px; }
     #text-cmd summary { cursor: pointer; font-size: 13px; color: #9aa; }
+    #flag-btn { font-size: 12px; padding: 2px 8px; margin-top: 4px; }
     #text-cmd[open] summary { margin-bottom: 6px; }
     .log2 { height: 160px; overflow-y: auto; font: 12px ui-monospace, monospace; background: #1b1c22; border-radius: 4px; padding: 8px; }
     .log2 .entry { margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
@@ -61,6 +62,7 @@
       <div id="voice-reply"></div>
       <details id="text-cmd">
         <summary>⌨ Type a command instead</summary>
+      <button id="flag-btn" hidden title="Save this command as a failure case (backend/data/traces/)">👎 Wrong result</button>
         <div id="cmd-out" class="log2"></div>
         <form id="cmd-form"><input id="cmd-input" placeholder="e.g. lower the gravity" autocomplete="off"><button type="submit">Send</button></form>
       </details>

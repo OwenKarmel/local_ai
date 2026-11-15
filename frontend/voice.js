@@ -6,8 +6,33 @@
   const S = () => window.Sketch2Game;
   const ui = {
     btn: $("talk-btn"), meter: $("mic-level"), status: $("voice-status"), heard: $("voice-heard"),
-    reply: $("voice-reply"), badge: $("listen-badge"),
+    reply: $("voice-reply"), badge: $("listen-badge"), flag: $("flag-btn"),
   };
+
+  // Every command is saved as a trace on the backend. The flag button marks the last one as wrong
+  // (e.g. it applied but did the wrong thing), so it shows up in `python -m backend.traces --failures`.
+  let lastTrace = null;
+  window.Sketch2Game_setLastTrace = (id, text) => {
+    lastTrace = id ? { id, text } : null;
+    ui.flag.hidden = !lastTrace;
+    ui.flag.disabled = false;
+    ui.flag.textContent = "👎 Wrong result";
+  };
+  ui.flag.addEventListener("click", async () => {
+    ui.flag.blur();  // otherwise Space (jump) re-clicks it
+    if (!lastTrace) return;
+    const note = window.prompt(`What went wrong with "${lastTrace.text}"? (optional)`, "");
+    if (note === null) return;
+    try {
+      const r = await fetch(`/api/traces/${encodeURIComponent(lastTrace.id)}/flag`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }),
+      });
+      if (!r.ok) throw new Error(`flag failed (${r.status})`);
+      ui.flag.textContent = "Flagged ✓";
+      ui.flag.disabled = true;
+      log(`flagged trace ${lastTrace.id}${note ? ": " + note : ""}`, "info");
+    } catch (e) { log(e.message, "error"); }
+  });
 
   let stream = null, recorder = null, chunks = [], startedAt = 0, analyser = null, raf = 0, busy = false;
 
@@ -114,6 +139,7 @@
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail ? JSON.stringify(d.detail) : `command failed (${r.status})`);
+      window.Sketch2Game_setLastTrace(d.trace_id, text);
       const secs = (d.latency_ms / 1000).toFixed(1);
       ui.reply.textContent = `${d.spoken}  · ${d.status} · ${d.model || "?"} · ${secs} s`;
       ui.reply.className = d.status;

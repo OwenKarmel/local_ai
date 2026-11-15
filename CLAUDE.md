@@ -112,6 +112,7 @@ Start of every session: `git checkout main && git pull`, read `plan.md`, run `gh
 | `backend/pipeline.py` | `run_command(level, text, model, player)`: prompt → model → intents → fixes → validate → contract response. Max 1 model retry |
 | `backend/prompts.py` | System prompt + 2 worked examples |
 | `backend/speech.py` | `/api/transcribe` helper: ffmpeg convert + pad, forward to the Argmax server |
+| `backend/traces.py` | Saves one JSON snapshot per command to `backend/data/traces/` (prompt, raw replies, errors, patch, outcome, player flag). `python -m backend.traces [--failures] \| show <id> \| replay <id>` |
 | `backend/eval_commands.py` | `python -m backend.eval_commands --models 4B`: success, latency and tok/s per model |
 
 ## Contracts
