@@ -688,7 +688,7 @@
       const next = stage.index + 1;
       if (next < stage.count) {
         this.banner.setText(`Level complete!\nCoins ${this.coins}/${this.totalCoins}\nNext: ${stage.names[next] || "level " + (next + 1)}`);
-        this.time.delayedCall(2200, () => goToStage(next)); // cancelled if the player restarts with R
+        this.time.delayedCall(3000, () => goToStage(next)); // let the level-complete screen sit for a moment; restart cancels it
       } else {
         this.banner.setText(`You win!\nCoins ${this.coins}/${this.totalCoins}\nPress R to play again`);
       }

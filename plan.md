@@ -16,7 +16,7 @@
 | 6 | Dodge across moving platforms | Horizontal and vertical platforms carry the player without visible sliding or jitter |
 | 7 | Hold V to talk | Pixel microphone icon with V lights while listening |
 | 8 | Command completes | Subtle gray result box shows latency and model path, then fades; visible in `?demo` |
-| 9 | Reach a level goal | Multicolor confetti bursts on every level win |
+| 9 | Reach a level goal | Multicolor confetti bursts on every level win; stage 1 shows “Level complete!” for 3 seconds, then automatically loads stage 2 |
 
 ## Task board
 
@@ -32,7 +32,7 @@ One branch and PR per task. Acceptance is playing the feature in the browser. No
 | 6 | Proportional grow power-up | — | `frontend/game.js` | Width and height scale together and body matches | in `t6-escalation`; browser checked (38.4×48 body) |
 | 7 | Pixel V microphone icon | 7 | `frontend/game.js`, `frontend/voice.js` | Listening state works in normal and demo modes | PR #23; browser checked in `?demo` |
 | 8 | Fading command result box | 8 | `frontend/game.js`, `frontend/voice.js` | Latency and model path visible in normal and demo modes | PR #23; browser checked in `?demo` |
-| 9 | Generic confetti win effect | 9 | `frontend/sprites.js`, `frontend/game.js` | Multicolor Phaser particles burst on each win | PR #23; browser checked; 120 particles |
+| 9 | Generic win celebration and stage transition | 9 | `frontend/sprites.js`, `frontend/game.js` | Multicolor Phaser particles burst on each win; stage 1 advances to stage 2 after a 3-second completion screen | PR #23; browser checked |
 | 10 | Speed up fireball commands without hardcoding. (a) **Cache of model-written code:** the first time the 9B writes an ability its code is saved, keyed by the 4B's description of what to build (fuzzy word match), and reused instantly when a similar request comes in; only code that passed the syntax and load checks is stored, and nothing is pre-written. (b) **Retest the 4B as the code writer.** | 4 | `backend/codegen.py`, `backend/pipeline.py` | A repeat fireball applies in about 1 s; the HUD says "(saved code)"; first-time fireball ≤ ~20 s | (a) built and unit-tested on Ashwin's local branch `t6-cache` (commit 2e357fc, **not pushed**: it's based on `t6-escalation`, so it needs rebasing after #23). (b) syntax/load checks pass 5/5 on the 4B at about 10.5 s each; behavior **not** browser-tested |
 
 ## Later
@@ -221,6 +221,7 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
 | 11-14 | Public browser global and page title renamed to `Callout` | Product name is consistent in the game, API and docs |
 | 11-14 | Mic HUD uses a recognizable microphone emoji, with a red muted state and green listening state; V remains visible | Makes the push-to-talk state easy to read on video |
 | 11-14 | Every level win emits 120 multicolor Phaser confetti particles | A generic visual celebration tied to the reusable win event |
+| 11-14 | Stage 1 holds the level-complete screen for 3 seconds, then loads the next stage | Gives the player time to see the win before automatic progression |
 
 
 ## Dropped
