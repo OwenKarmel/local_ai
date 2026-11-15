@@ -146,7 +146,8 @@
       this.toast = this.add.text(480, 44, "", { fontFamily: "monospace", fontSize: "18px", color: "#fff", stroke: "#3a2a6a", strokeThickness: 4 })
         .setOrigin(0.5).setScrollFactor(0).setDepth(10).setAlpha(0);
       this.micIcon = this.add.graphics().setScrollFactor(0).setDepth(12);
-      this.micV = this.add.text(0, 0, "V", { fontFamily: "monospace", fontSize: "12px", color: "#e8e2ca", fontStyle: "bold" }).setScrollFactor(0).setDepth(13);
+      this.micEmoji = this.add.text(0, 0, "🎤", { fontFamily: "Apple Color Emoji, Noto Color Emoji, sans-serif", fontSize: "27px" }).setScrollFactor(0).setDepth(13);
+      this.micV = this.add.text(0, 0, "V", { fontFamily: "monospace", fontSize: "12px", color: "#fff", fontStyle: "bold" }).setScrollFactor(0).setDepth(14);
       this.commandBox = this.add.graphics().setScrollFactor(0).setDepth(12).setAlpha(0);
       this.commandText = this.add.text(0, 0, "", { fontFamily: "monospace", fontSize: "12px", color: "#f0f0f0" }).setScrollFactor(0).setDepth(13).setAlpha(0);
       this.drawMicIcon(false);
@@ -680,6 +681,7 @@
       if (this.won) return;
       this.won = true;
       LK.react(this, "win", this.player);
+      S.fx.confetti(this.player.x, this.player.y - 24, 120);
       this.physics.pause();
       S.fx.sparkle(this.player.x, this.player.y - 10, 0xfff2a0, 20);
       log(`Level complete: ${this.level.name}`, "ok");
@@ -784,9 +786,10 @@
         if (!dx && !dy) continue;
         const p = this.player, b = p.body, pb = plat.body;
         const riding = b && b.bottom >= pb.top - 4 && b.bottom <= pb.top + 7 && b.right > pb.left && b.left < pb.right;
+        this.physics.world.staticTree.remove(plat.body);
         plat.setPosition(nx, ny);
         plat.body.updateFromGameObject();
-        this.physics.world.staticTree.update(plat.body);
+        this.physics.world.staticTree.insert(plat.body);
         for (const v of plat.visuals || []) v.setPosition(v.x + dx, v.y + dy);
         if (riding) p.setPosition(p.x + dx, p.y + dy);
       }
@@ -798,16 +801,13 @@
     }
 
     drawMicIcon(listening) {
-      const g = this.micIcon, x = 904, y = 14, c = listening ? 0xf04e55 : 0x555b68;
+      const g = this.micIcon, x = 904, y = 14, c = listening ? 0x299b5b : 0xc9434e;
       g.clear();
-      g.fillStyle(0x1b1d25, 0.9).fillRect(x, y, 44, 52);
-      g.fillStyle(listening ? 0xffffff : 0xc3c5ca, 1);
-      // Tiny block microphone silhouette, deliberately pixel stepped.
-      g.fillRect(x + 18, y + 7, 8, 20).fillRect(x + 14, y + 12, 4, 12).fillRect(x + 26, y + 12, 4, 12);
-      g.fillRect(x + 13, y + 25, 18, 4).fillRect(x + 11, y + 29, 22, 4).fillRect(x + 20, y + 33, 4, 5);
-      g.fillStyle(c, 1).fillRect(x + 16, y + 40, 12, 3);
-      g.lineStyle(2, listening ? 0xff8888 : 0xbababa, 1).strokeRect(x + 1, y + 1, 42, 50);
-      this.micV.setPosition(x + 18, y + 39).setColor(listening ? "#ffffff" : "#d8d2bf");
+      g.fillStyle(0x171922, 0.92).fillRoundedRect(x, y, 44, 52, 7);
+      g.lineStyle(3, c, 1).strokeRoundedRect(x + 1.5, y + 1.5, 41, 49, 6);
+      this.micEmoji.setPosition(x + 7, y + 3);
+      g.fillStyle(c, 1).fillRoundedRect(x + 15, y + 35, 14, 14, 2);
+      this.micV.setPosition(x + 18, y + 35).setColor("#ffffff");
     }
 
     setListening(on) { this.drawMicIcon(!!on); }

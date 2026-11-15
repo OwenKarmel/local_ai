@@ -7,7 +7,7 @@
   const typing = () => ["INPUT", "TEXTAREA"].includes(document.activeElement && document.activeElement.tagName);
 
   function refreshScale() {
-    const sc = window.Sketch2Game && window.Sketch2Game.scene;
+    const sc = window.Callout && window.Callout.scene;
     if (sc && sc.scale) sc.scale.refresh(); // keep mouse/pointer coordinates right after the canvas is resized
   }
 
