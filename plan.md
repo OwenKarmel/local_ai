@@ -257,6 +257,10 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
 | 11-14 16:40 | Pre-written fireball ability to be removed (task 4); abilities are model-written in mechanics.js through the sandbox (tasks 5–6) | Same principle. `set_ability` stays as a generic settings op |
 | 11-14 16:40 | `/api/command` request gains `cursor: {x, y} \| null`; response gains `stats` (only measured numbers, null otherwise) | Beat 5 needs the cursor tile; Beat 8 and the HUD need honest stats |
 | 11-14 16:40 | Prompt examples must not match demo commands | Otherwise the demo shows memorized examples, not generality |
+| 11-14 16:10 | **Intent reply: `plan` (was `explanation`) is required and comes before `ops`; `ops` needs at least one item** | Constrained decoding writes required fields first, so the optional explanation came after the ops as a justification. Planning first fixed op choice on the 2B, and empty `ops` cost a retry. Old `explanation` replies still parse |
+| 11-14 16:10 | Op selection uses a low-temperature sampler (`temperature 0.2`, no presence penalty); chat keeps the Bonsai defaults | Picking from a fixed menu wants the most likely reading; presence penalty punishes the repeated tokens JSON needs |
+| 11-14 16:10 | **New intent ops `add_platform` (over a gap, region or platform) and `add_pickup` (`double_jump`)**. Building blocks: code computes placement | With no op for them, the model substituted coins for platforms and fireballs or gravity for double jumps, and reported success |
+| 11-14 16:10 | `set_property` rejects physics keys, and props on objects with no behaviors (props are only read by behaviors) | "lower the gravity" wrote `props.gravity` onto a platform and reported success |
 
 
 ## Dropped
