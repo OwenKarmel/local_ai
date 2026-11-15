@@ -12,7 +12,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 import big_player  # tools/big_player.py (this folder is on sys.path when run as a script)
 
@@ -104,7 +104,15 @@ for c in ["blue", "green", "red", "yellow"]:
     add(f"gem_{c}", "coin", use("t", f"gem_{c}.png"), f"{c} gem (collectible, counts as a coin)", scale=0.5)
 
 # ---- power-ups ----
-add("powerup_star", "powerup", use("t", "star.png"), "gold star (default double-jump power-up)", scale=0.5)
+add("powerup_star", "powerup", use("t", "star.png"), "gold star", scale=0.5)
+# Purple recolor of the star (CC0 derivative), the default double-jump look.
+_st = Image.open(SPR / "star.png").convert("RGBA")
+_gray = Image.merge("RGB", _st.split()[:3]).convert("L")
+_pu = ImageOps.colorize(_gray, black="#2a0a4a", mid="#8a3ff0", white="#e9d6ff").convert("RGBA")
+_pu.putalpha(_st.split()[3])
+_pu.save(SPR / "star_purple.png")
+used.add("star_purple.png")
+add("powerup_star_purple", "powerup", "star_purple.png", "purple star (default double-jump power-up)", scale=0.5)
 add("powerup_heart", "powerup", use("t", "heart.png"), "red heart", scale=0.5)
 add("powerup_spring", "powerup", use("t", "spring.png"), "metal spring", scale=0.5)
 add("powerup_mushroom_red", "powerup", use("t", "mushroom_red.png"), "red mushroom (default grow power-up)", scale=0.5)
@@ -154,7 +162,7 @@ for f in SPR.glob("*.png"):  # drop files from older runs
 catalog = {
     "source": "Kenney New Platformer Pack 1.1 (kenney.nl), CC0. See sprites/License.txt. ball_white.png, effect_*.png, character_big_*.png are derived/generated.",
     "defaults": {"player": "player_green", "platform": "platform_grass", "spikes": "spikes", "lava": "lava", "enemy": "enemy_slime_purple",
-                 "coin": "coin_gold", "double_jump": "powerup_star", "grow": "powerup_mushroom_red", "player_big": "player_big_green", "goal": "flag_green", "projectile": "fireball_orange"},
+                 "coin": "coin_gold", "double_jump": "powerup_star_purple", "grow": "powerup_mushroom_red", "player_big": "player_big_green", "goal": "flag_green", "projectile": "fireball_orange"},
     "sprites": entries,
 }
 (OUT / "catalog.json").write_text(json.dumps(catalog, indent=1) + "\n")
