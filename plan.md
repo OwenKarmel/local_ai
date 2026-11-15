@@ -24,15 +24,15 @@ One branch and PR per task. Acceptance is playing the feature in the browser. No
 
 | # | Task | Beat | Files | Done when | Status |
 |---|---|---|---|---|---|
-| 1 | General fiery projectile API and visuals | 4 | `frontend/mechanics.js`, `frontend/sprites.js`, `backend/codegen.py` | Glow, flicker, Phaser trail and impact burst support model-written fireballs | browser checked; model call pending |
-| 2 | Boss fight and checkpoint respawn | 3–4 | `frontend/game.js`, `frontend/mechanics.js`, `backend/levels/boss.json` | Fireball-only multi-hit boss shoots; a hit respawns before boss | browser checked |
-| 3 | General moving platforms | 6 | `frontend/game.js`, `backend/summary.py`, `backend/intents.py`, `backend/levels/boss.json` | Any platform can use horizontal or vertical movement; rider stays stable | browser checked (32 samples, 0.01 px gap range) |
-| 4 | Moon and dusk backgrounds; combined moon + gravity | 2, 5 | `backend/looks.py`, `backend/schema.py`, `backend/prompts.py`, `frontend/looks.js` | Model can select themes and combine moon with physics changes | browser checked via live patch; model call pending |
-| 5 | Camo player sprite | 2 | `frontend/assets/`, `tools/build_catalog.py` | Animated camo sprite is selectable from the catalog | browser checked |
-| 6 | Proportional grow power-up | — | `frontend/game.js` | Width and height scale together and body matches | browser checked (38.4×48 body) |
-| 7 | Pixel V microphone icon | 7 | `frontend/game.js`, `frontend/voice.js` | Listening state works in normal and demo modes | browser checked in `?demo` |
-| 8 | Fading command result box | 8 | `frontend/game.js`, `frontend/voice.js` | Latency and model path visible in normal and demo modes | browser checked in `?demo` |
-| 9 | Generic confetti win effect | 9 | `frontend/sprites.js`, `frontend/game.js` | Multicolor Phaser particles burst on each win | browser checked; 120 particles |
+| 1 | General fiery projectile API and visuals | 4 | `frontend/mechanics.js`, `frontend/sprites.js`, `backend/codegen.py` | Glow, flicker, Phaser trail and impact burst support model-written fireballs | PR #23; browser checked; model call pending |
+| 2 | Boss fight and checkpoint respawn | 3–4 | `frontend/game.js`, `frontend/mechanics.js`, `backend/levels/boss.json` | Fireball-only multi-hit boss shoots; a hit respawns before boss | in `t6-escalation`; browser checked |
+| 3 | General moving platforms | 6 | `frontend/game.js`, `backend/summary.py`, `backend/intents.py`, `backend/levels/boss.json` | Any platform can use horizontal or vertical movement; rider stays stable | in `t6-escalation`; browser checked (32 samples, 0.01 px gap range); static-body fix in PR #23 |
+| 4 | Moon and dusk backgrounds; combined moon + gravity | 2, 5 | `backend/looks.py`, `backend/schema.py`, `backend/prompts.py`, `frontend/looks.js` | Model can select themes and combine moon with physics changes | PR #23; live patch browser checked; model call pending |
+| 5 | Camo player sprite | 2 | `frontend/assets/`, `tools/build_catalog.py` | Animated camo sprite is selectable from the catalog | PR #23; browser checked |
+| 6 | Proportional grow power-up | — | `frontend/game.js` | Width and height scale together and body matches | in `t6-escalation`; browser checked (38.4×48 body) |
+| 7 | Pixel V microphone icon | 7 | `frontend/game.js`, `frontend/voice.js` | Listening state works in normal and demo modes | PR #23; browser checked in `?demo` |
+| 8 | Fading command result box | 8 | `frontend/game.js`, `frontend/voice.js` | Latency and model path visible in normal and demo modes | PR #23; browser checked in `?demo` |
+| 9 | Generic confetti win effect | 9 | `frontend/sprites.js`, `frontend/game.js` | Multicolor Phaser particles burst on each win | PR #23; browser checked; 120 particles |
 
 ## Later
 Not needed for any beat. Don't start these until every beat passes.
