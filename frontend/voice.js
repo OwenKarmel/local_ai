@@ -3,7 +3,7 @@
 // Shows clearly when it's listening (red badge on the game + live mic level), transcribing, and thinking.
 (function () {
   const $ = (id) => document.getElementById(id);
-  const S = () => window.Sketch2Game;
+  const S = () => window.Callout;
   const ui = {
     btn: $("talk-btn"), meter: $("mic-level"), status: $("voice-status"), heard: $("voice-heard"),
     reply: $("voice-reply"), badge: $("listen-badge"), flag: $("flag-btn"),
@@ -12,7 +12,7 @@
   // Every command is saved as a trace on the backend. The flag button marks the last one as wrong
   // (e.g. it applied but did the wrong thing), so it shows up in `python -m backend.traces --failures`.
   let lastTrace = null;
-  window.Sketch2Game_setLastTrace = (id, text) => {
+  window.Callout_setLastTrace = (id, text) => {
     lastTrace = id ? { id, text } : null;
     ui.flag.hidden = !lastTrace;
     ui.flag.disabled = false;
@@ -84,6 +84,7 @@
     recorder.onstop = onRecorded;
     recorder.start();
     startedAt = performance.now();
+    if (S() && S().setListening) S().setListening(true);
     ui.btn.classList.add("recording");
     setStatus("● Listening… release to send", "listening");
     meterLoop();
@@ -92,6 +93,7 @@
   function stopListening() {
     if (!recorder || recorder.state !== "recording") return;
     recorder.stop();
+    if (S() && S().setListening) S().setListening(false);
     ui.btn.classList.remove("recording");
     cancelAnimationFrame(raf);
     ui.meter.style.width = "0%";
@@ -121,7 +123,7 @@
   }
 
   // Shared with testwin.js (typed commands).
-  window.Sketch2Game_playerState = () => playerState();
+  window.Callout_playerState = () => playerState();
   function playerState() {
     const sc = S() && S().scene;
     if (!sc || !sc.player || !sc.sys.isActive()) return null;
@@ -139,9 +141,12 @@
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail ? JSON.stringify(d.detail) : `command failed (${r.status})`);
-      window.Sketch2Game_setLastTrace(d.trace_id, text);
+      window.Callout_setLastTrace(d.trace_id, text);
       const secs = (d.latency_ms / 1000).toFixed(1);
-      ui.reply.textContent = `${d.spoken}  · ${d.status} · ${d.model || "?"} · ${secs} s`;
+      const shortModel = (v) => String(v || "Bonsai").split("/").pop().replace(/^Ternary-Bonsai-2-/, "Bonsai ").replace(/-mlx.*$/, "").replace(/[^\w ]/g, " ").trim();
+      const path = d.stats && d.stats.escalated_to ? `${shortModel(d.model)} → ${shortModel(d.stats.escalated_to)}` : shortModel(d.model);
+      if (S() && S().showCommandResult) S().showCommandResult(`${secs} s · ${path}`);
+      ui.reply.textContent = `${d.spoken}  · ${d.status} · ${d.stats && d.stats.label ? d.stats.label : `${d.model || "?"} · ${secs} s`}`;
       ui.reply.className = d.status;
       if (d.reason) log(`${d.status}: ${d.reason}`, "error");
       log(`[${source}] "${text}" → ${d.status} (${secs} s): ${d.spoken}`, d.status === "applied" ? "ok" : "error");

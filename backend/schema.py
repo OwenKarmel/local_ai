@@ -47,6 +47,7 @@ SceneFilter = Literal["none", "grayscale", "sepia", "negative", "vintage", "nigh
 
 class SceneLook(BaseModel):
     """Whole-screen look. None = default."""
+    background: Optional[Literal["default", "dusk", "moon"]] = None
     sky: Optional[HexColor] = None          # sky color (top of the gradient)
     sky_bottom: Optional[HexColor] = None   # bottom of the sky gradient (default: same as sky)
     scenery: Optional[bool] = None          # show the clouds/hills background art (default true)

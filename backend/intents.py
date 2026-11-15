@@ -89,8 +89,15 @@ class Unsupported(BaseModel):
     reason: str = Field(description="what part of the command these operations can't express")
 
 
+class WriteCode(BaseModel):
+    """Escalation: the command needs NEW game code. The 4B decides; the pipeline sends it to the code model (9B)."""
+    op: Literal["write_code"]
+    kind: Literal["ability", "behavior"] = Field(description="ability = something the player uses; behavior = how objects act")
+    what: str = Field(max_length=200, description="one sentence: what the new code must do")
+
+
 IntentOp = Annotated[Union[WidenGap, ShrinkPlatform, AddEnemy, AddHazardNear, AddCoins, AddPlatform, AddPickup, Remove,
-                           SetProperty, SetPhysics, SetLook, SetScene, AddReaction, RemoveReaction, Unsupported],
+                           SetProperty, SetPhysics, SetLook, SetScene, AddReaction, RemoveReaction, WriteCode, Unsupported],
                      Field(discriminator="op")]
 
 
@@ -570,7 +577,7 @@ def compile_intent(level: Level, intent: IntentPatch, player: dict | None = None
                 ed.errors.append(f"{where}: {op.key.removeprefix('props.')} is a level-wide physics setting, not a property "
                                  f"of {e['id']}; use set_physics")
                 continue
-            elif not e["behaviors"]:  # props are read only by behaviors (mechanics.js), so this would do nothing
+            elif not e["behaviors"] and prop_spec(e, op.key.removeprefix("props.")) is None:  # otherwise props need a runtime reader
                 with_b = ", ".join(f"{x['id']} ({'/'.join(x['behaviors'])})" for x in ed.ents if x["behaviors"]) or "none"
                 ed.errors.append(f"{where}: {e['id']} has no behaviors, so props.{op.key.removeprefix('props.')} would do "
                                  f"nothing (props are only read by behaviors). Objects with behaviors: {with_b}")

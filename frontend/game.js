@@ -1,5 +1,5 @@
 // game.js — Phaser runtime. Builds a level from JSON and runs it.
-// Public API (window.Sketch2Game): loadLevel(levelJson), applyPatch(ops, levelJson, label, stage), goToStage(i), log(msg, kind),
+// Public API (window.Callout): loadLevel(levelJson), applyPatch(ops, levelJson, label, stage), goToStage(i), log(msg, kind),
 //   setAppearance(id, {sprite, tint}), setPlayerLook({sprite, tint}), debugProjectile(sprite, tint), .level, .scene, .stage
 // Visual-only looks (entity.look, level.player_look, level.scene, level.reactions) are drawn by looks.js (window.LOOKS).
 // Levels are played as stages in order (backend /api/stage); reaching an unlocked goal moves on to the next stage.
@@ -9,9 +9,8 @@
   const COYOTE_MS = 100;     // jump grace after leaving a ledge
   const JUMP_BUFFER_MS = 100; // jump pressed slightly before landing still counts
   const PLAYER_W = 24, PLAYER_H = 30, ENEMY_W = 28, ENEMY_H = 24; // physics bodies (world px); art is skinned around them
-  // "grow" power-up: the player turns into the tall character (catalog default "player_big": tools/big_player.py).
-  // Body 28x48: still fits through a 2-tile opening.
-  const BIG_W = 28, BIG_H = 48; // grown player's physics body (world px)
+  // "grow" scales the player and physics body uniformly; this fits through a 2-tile opening.
+  const BIG_SCALE = 1.6, BIG_W = PLAYER_W * BIG_SCALE, BIG_H = PLAYER_H * BIG_SCALE;
   const HURT_GRACE_MS = 1500; // after a big player is hit and shrinks: can't be hurt again for this long
   const S = window.SPRITES;
   const LK = window.LOOKS;
@@ -133,6 +132,7 @@
       this.physics.add.overlap(this.enemyShots, this.platforms, (shot) => { S.fx.burst(shot.x, shot.y, shot.trailColor ?? 0xffa030, 6); shot.destroy(); });
 
       this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+      this.refreshMotionPlatforms();
 
       // input
       this.cursors = this.input.keyboard.createCursorKeys();
@@ -145,12 +145,38 @@
         .setOrigin(0.5).setScrollFactor(0).setDepth(10);
       this.toast = this.add.text(480, 44, "", { fontFamily: "monospace", fontSize: "18px", color: "#fff", stroke: "#3a2a6a", strokeThickness: 4 })
         .setOrigin(0.5).setScrollFactor(0).setDepth(10).setAlpha(0);
+      this.micIcon = this.add.graphics().setScrollFactor(0).setDepth(12);
+      this.micV = this.add.text(0, 0, "V", { fontFamily: "monospace", fontSize: "12px", color: "#e8e2ca", fontStyle: "bold" }).setScrollFactor(0).setDepth(13);
+      this.commandBox = this.add.graphics().setScrollFactor(0).setDepth(12).setAlpha(0);
+      this.commandText = this.add.text(0, 0, "", { fontFamily: "monospace", fontSize: "12px", color: "#f0f0f0" }).setScrollFactor(0).setDepth(13).setAlpha(0);
+      this.drawMicIcon(false);
       LK.applyScene(this, L.scene);
       this.updateHud();
       this.installAbilities();
     }
 
+    // Model-written code arrives as level.abilities[name].code (backend/codegen.py). Register it in ABILITIES
+    // (sandboxed: a load error is reported and the ability stays off). Same code twice is a no-op.
+    loadAbilityCode(name, a) {
+      const cur = window.ABILITIES[name];
+      if (!a || !a.code || a.enabled === false) { if (cur && cur.__code) delete window.ABILITIES[name]; return false; }
+      if (cur && cur.__code === a.code) return false;
+      try {
+        const reg = {};
+        new Function("ABILITIES", "Phaser", a.code)(reg, Phaser);
+        const ab = reg[name] || Object.values(reg)[0];
+        if (!ab) throw new Error("the code did not register an ability");
+        ab.__code = a.code;
+        window.ABILITIES[name] = ab;
+        return true;
+      } catch (err) {
+        reportMechanicsError(name, "load", err);
+        return false;
+      }
+    }
+
     installAbilities() {
+      for (const [name, a] of Object.entries((this.level && this.level.abilities) || {})) this.loadAbilityCode(name, a);
       this.abilityApis = {};
       for (const [name, ab] of Object.entries(window.ABILITIES || {})) {
         if (!ab || ab.disabled) continue;
@@ -190,6 +216,7 @@
       switch (e.type) {
         case "platform":
           obj = this.add.zone(cx, cy, w, h);
+          obj.props = e.props || {};
           this.platforms.add(obj);
           break;
         case "spikes":
@@ -266,7 +293,7 @@
       return { bw: ENEMY_W * w * sx, bh: ENEMY_H * h * sy, mul: m * sx, mulY: m * sy };
     }
 
-    // Player look: level.player_look (from commands), overridden by Sketch2Game.setPlayerLook (dev tool).
+    // Player look: level.player_look (from commands), overridden by Callout.setPlayerLook (dev tool).
     playerLookNow() {
       const out = { ...((this.level && this.level.player_look) || {}) };
       for (const [k, v] of Object.entries(playerLook)) if (v !== undefined) out[k] = v;
@@ -345,7 +372,16 @@
             break;
           }
           case "update_entity": this.liveUpdate(op.id, findDef(op.id)); break;
-          case "set_physics": case "set_ability": globalChange = true; break;
+          case "set_physics": globalChange = true; break;
+          case "set_ability": {
+            globalChange = true;
+            if (this.loadAbilityCode(op.ability, op.settings)) { // new model-written code: start it now
+              const ab = window.ABILITIES[op.ability];
+              const api = (this.abilityApis[op.ability] = window.makeMechanicsApi(this, op.ability, reportMechanicsError));
+              try { if (typeof ab.setup === "function") ab.setup(this, api); } catch (err) { reportMechanicsError(op.ability, "setup", err); }
+            }
+            break;
+          }
           case "set_player_look": case "set_scene": case "set_reactions": looks.add(op.op); break;
           default: log(`Unknown patch op '${op.op}'`, "error");
         }
@@ -356,6 +392,7 @@
         const d = findDef(id);
         if (d) { this.byId[id].def = d; this.byId[id].props = d.props || {}; }
       }
+      this.refreshMotionPlatforms();
       if (looks.has("set_player_look")) { this.skinPlayer(); this.ring(this.player.x, this.player.y, 0xfff2a0, 8); }
       if (looks.has("set_scene")) LK.applyScene(this, next.scene);
       this.graceUntil = this.time.now + 700; // don't let a change kill the player on the spot
@@ -500,7 +537,7 @@
       if (stomp) {
         LK.react(this, "stomp", en);
         p.setVelocityY(-this.level.physics.jump_velocity * 0.6);
-        this.damageEnemy(en, 1);
+        if (en.props.stompable !== false) this.damageEnemy(en, 1);
       } else {
         this.hurt("Got hit by an enemy");
       }
@@ -682,6 +719,8 @@
       if (Phaser.Input.Keyboard.JustDown(k.R)) { this.scene.restart(); return; }
       if (this.dead || this.won) return;
 
+      this.updateMovingPlatforms(time);
+
       const p = this.player, phys = this.level.physics;
       const onGround = p.body.blocked.down;
       if (onGround && !this.wasOnGround) LK.react(this, "land", p, p.x, p.body.bottom);
@@ -730,6 +769,57 @@
       // fell out of the world
       if (p.y > this.worldH + 40) this.die("Fell into a pit");
       this.enemies.getChildren().forEach((en) => { if (en.active && en.y > this.worldH + 100) en.disableBody(true, true); });
+    }
+
+    // Move generic platforms along signed tile offsets and carry a player standing on top.
+    updateMovingPlatforms(time) {
+      for (const plat of this.motionPlatforms || []) {
+        if (!plat.active || !plat.motionOrigin) continue;
+        const props = plat.props || {}, period = Math.max(1, Number(props.motion_period) || 4) * 1000;
+        const phase = ((time % period) / period) * 2;
+        const t = phase <= 1 ? phase : 2 - phase;
+        const nx = plat.motionOrigin.x + (Number(props.motion_dx) || 0) * TILE * t;
+        const ny = plat.motionOrigin.y + (Number(props.motion_dy) || 0) * TILE * t;
+        const dx = nx - plat.x, dy = ny - plat.y;
+        if (!dx && !dy) continue;
+        const p = this.player, b = p.body, pb = plat.body;
+        const riding = b && b.bottom >= pb.top - 4 && b.bottom <= pb.top + 7 && b.right > pb.left && b.left < pb.right;
+        plat.setPosition(nx, ny);
+        plat.body.updateFromGameObject();
+        this.physics.world.staticTree.update(plat.body);
+        for (const v of plat.visuals || []) v.setPosition(v.x + dx, v.y + dy);
+        if (riding) p.setPosition(p.x + dx, p.y + dy);
+      }
+    }
+
+    refreshMotionPlatforms() {
+      this.motionPlatforms = this.platforms.getChildren().filter((o) => o.props && ((Number(o.props.motion_dx) || 0) || (Number(o.props.motion_dy) || 0)));
+      for (const o of this.motionPlatforms) if (!o.motionOrigin) o.motionOrigin = { x: o.x, y: o.y };
+    }
+
+    drawMicIcon(listening) {
+      const g = this.micIcon, x = 904, y = 14, c = listening ? 0xf04e55 : 0x555b68;
+      g.clear();
+      g.fillStyle(0x1b1d25, 0.9).fillRect(x, y, 44, 52);
+      g.fillStyle(listening ? 0xffffff : 0xc3c5ca, 1);
+      // Tiny block microphone silhouette, deliberately pixel stepped.
+      g.fillRect(x + 18, y + 7, 8, 20).fillRect(x + 14, y + 12, 4, 12).fillRect(x + 26, y + 12, 4, 12);
+      g.fillRect(x + 13, y + 25, 18, 4).fillRect(x + 11, y + 29, 22, 4).fillRect(x + 20, y + 33, 4, 5);
+      g.fillStyle(c, 1).fillRect(x + 16, y + 40, 12, 3);
+      g.lineStyle(2, listening ? 0xff8888 : 0xbababa, 1).strokeRect(x + 1, y + 1, 42, 50);
+      this.micV.setPosition(x + 18, y + 39).setColor(listening ? "#ffffff" : "#d8d2bf");
+    }
+
+    setListening(on) { this.drawMicIcon(!!on); }
+
+    showCommandResult(label) {
+      const x = 14, y = 435, w = Math.min(520, Math.max(180, String(label).length * 7 + 20)), h = 28;
+      this.commandBox.clear().fillStyle(0x24262d, 0.92).fillRect(x, y, w, h)
+        .lineStyle(2, 0x737780, 1).strokeRect(x, y, w, h);
+      this.commandText.setPosition(x + 9, y + 7).setText(String(label)).setAlpha(1);
+      this.commandBox.setAlpha(1);
+      this.tweens.killTweensOf([this.commandBox, this.commandText]);
+      this.tweens.add({ targets: [this.commandBox, this.commandText], alpha: 0, delay: 3800, duration: 450 });
     }
   }
 
@@ -833,12 +923,14 @@
     log("Reset this level to its original layout", "info");
   });
 
-  window.Sketch2Game = {
+  window.Callout = {
     loadLevel, applyPatch, goToStage, log,
     // Live look changes (no restart). Unknown sprite names fall back to the type's default.
     setAppearance(id, changes) { const s = activeScene(); return s ? s.setAppearance(id, changes) : false; },
     // look: {sprite, tint, bigSprite}; bigSprite is the look while grown by a "grow" power-up.
     setPlayerLook(look) { playerLook = { ...playerLook, ...look }; const s = activeScene(); if (s) s.skinPlayer(); },
+    setListening(on) { const s = activeScene(); if (s) s.setListening(on); },
+    showCommandResult(label) { const s = activeScene(); if (s) s.showCommandResult(label); },
     // Visual test for projectiles and trails until the fireball runtime (O7) exists.
     debugProjectile(sprite, tint) {
       const s = activeScene();

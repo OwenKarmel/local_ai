@@ -23,3 +23,8 @@ NO_THINKING = os.environ.get("NO_THINKING", "").strip().lower() in ("1", "true",
 
 # STUB_SPEECH=1: /api/transcribe returns fixed text (no Argmax server needed; any machine).
 STUB_SPEECH = os.environ.get("STUB_SPEECH", "").strip().lower() in ("1", "true", "yes")
+
+# Code escalation: when the level model (4B) decides a command needs new game code, the code model writes it.
+# Runs on its own mlx_vlm.server so there's no model swap (see CLAUDE.md "Model setup").
+CODE_GEN_MODEL = os.environ.get("CODE_GEN_MODEL", f"{_MODELS}/Ternary-Bonsai-2-9B-mlx-2bit")
+CODE_GEN_BASE_URL = os.environ.get("CODE_GEN_BASE_URL", "http://localhost:1235/v1")

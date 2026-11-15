@@ -52,16 +52,17 @@ remove {id}
 set_property {id, key, value}: props read by behaviors (patrol: speed, range; others in the summary)
 set_physics {key, value}: LEVEL-WIDE gravity (1200), jump_velocity (560), run_speed (200)
 set_look {target, sprite, tint, top_tint, body_tint, scale, scale_x, scale_y, alpha, flip_y, glow, effects, reset}: visual only
-set_scene {overlay, overlay_alpha, weather, weather_color, filter, hue_shift, saturation, brightness, pixelate, zoom, reset}: whole screen, visual only
+set_scene {background, sky, sky_bottom, scenery, scenery_tint, overlay, overlay_alpha, weather, weather_color, filter, hue_shift, saturation, brightness, pixelate, zoom, reset}: whole screen, visual only
 add_reaction {event, effect, color, size} / remove_reaction {event, effect}: visual effect when something happens
-unsupported {reason}: only for a part no op can do
+write_code {kind, what}: the command needs NEW game code that no op above can do: an ability the player uses (kind ability) or how objects act or move (kind behavior). A code model writes it; "what" says in one sentence what it must do
+unsupported {reason}: only for a part no op (including write_code) can do
 REGIONS: start, middle, end, a platform id; while playing also near_player, ahead.
 SPRITES: <<SPRITES>>
 
 RULES
 - Do only what is asked: most commands need one op, at most 6. No extras. Plural = one op per matching id.
-- Looks (color, size, sprite, glow, effects, weather, filters) use set_look/set_scene/add_reaction only. Colors are hex. bigger 1.5, huge 2.5, smaller 0.6, tiny 0.4. Grass = top_tint, dirt = body_tint.
-- Never substitute a different thing; use unsupported for that part. Anything outside the level and its looks (sound, music, saving, menus) is unsupported. Gap size: always widen_gap. Physics only via set_physics.
+- Looks (color, size, sprite, glow, effects, weather, backgrounds, filters) use set_look/set_scene/add_reaction only. Background choices: default, dusk, moon. Colors are hex. bigger 1.5, huge 2.5, smaller 0.6, tiny 0.4. Grass = top_tint, dirt = body_tint.
+- New powers, attacks, controls, or ways things move or act are write_code (never swap in a pickup or a look). Never substitute a different thing; use unsupported only if even write_code can't do it. Anything outside the level and its looks (sound, music, saving, menus) is unsupported. Gap size: always widen_gap. Physics only via set_physics.
 - While the PLAYER line is present, changes go AHEAD of the player ([ahead] items, the next gap, ahead/near_player) unless the command names a place or the whole level. Prefer things ahead over physics. Never edit [behind the player].
 - Modest amounts: a bit = 1 tile / 15%; more, bigger = 1-2 tiles / 25%; a lot = 3 tiles / 50%. Only ids from the summary.
 
@@ -109,6 +110,10 @@ EXAMPLES = [  # must not match demo commands (see CLAUDE.md core principle)
             {"op": "add_coins", "asked": "make the next bit more fun", "region": "ahead", "count": 3},
             {"op": "add_platform", "asked": "make the next bit more fun", "over": "ahead", "height": 2, "width": 3},
         ],
+    }),
+    ("make the coins drift toward me like a magnet", True, {
+        "plan": "new behavior: coins move toward the player, write_code",
+        "ops": [{"op": "write_code", "asked": "make the coins drift toward me like a magnet", "kind": "behavior", "what": "coins near the player slowly move toward the player"}],
     }),
     ("cozy autumn evening, a ripple when I grab coins, and let me save my game", False, {
         "plan": "warm wash + leaves; ring on coin; saving unsupported",

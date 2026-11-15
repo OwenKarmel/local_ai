@@ -175,6 +175,7 @@ class CommandOut(BaseModel):
     spoken: str
     reason: Optional[str]  # null when applied
     log: list[LogStep]
+    stats: Optional[dict] = None  # see plan.md contract; "label" is the one-line HUD text
     trace_id: Optional[str] = None  # snapshot in backend/data/traces/; flag it with POST /api/traces/{id}/flag
 
 

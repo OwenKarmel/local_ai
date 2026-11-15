@@ -58,7 +58,7 @@ MECHANICS.boss = function (entity, scene, dt) {
   if (every > 0 && s.hopT >= every && onGround) { s.hopT = 0; b.setVelocityY(-420); }
 
   const shootEvery = p.shoot_every ?? 0;
-  if (phase === 2 && shootEvery > 0) {
+  if (shootEvery > 0) {
     s.shotT += dt;
     if (s.shotT >= shootEvery) {
       s.shotT = 0;
@@ -123,6 +123,22 @@ window.makeMechanicsApi = function (scene, abilityName, report) {
       s.onHit = (b, fn) => api.onHit(s, b, fn); // same as api.onHit(sprite, b, fn)
       return s;
     },
+    // General projectile helper. fire:true gives a glowing, flickering Kenney fireball, Phaser trail and impact burst.
+    projectile(x, y, dir, opts = {}) {
+      const fire = opts.fire === true;
+      const p = window.SPRITES.spawnProjectile(scene, x, y, dir, {
+        ...opts, sprite: opts.sprite || (fire ? "fireball_orange" : undefined), fire,
+      });
+      if (fire) {
+        p.setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.88);
+        p.fireFlicker = scene.time.addEvent({ delay: 55, loop: true, callback: () => {
+          if (p.active) p.setTint([0xfff1a3, 0xffb12e, 0xff6b1e][Math.floor(Math.random() * 3)]);
+        }});
+        p.once("destroy", () => p.fireFlicker && p.fireFlicker.remove());
+        p.fireProjectile = true;
+      }
+      return p;
+    },
     // call fn(a, b) when a overlaps b. a, b: a sprite, a group, or "player" | "enemies" | "platforms" | "hazards".
     // Registering the same (a, b) pair again is a no-op, so calling it every frame doesn't pile up colliders.
     onHit(a, b, fn) {
@@ -130,13 +146,28 @@ window.makeMechanicsApi = function (scene, abilityName, report) {
       if (!ta || !tb) return null;
       const reg = (ta.__hits = ta.__hits || new Map());
       if (reg.has(tb)) return reg.get(tb);
-      const c = scene.physics.add.overlap(ta, tb, guard(fn));
+      const c = scene.physics.add.overlap(ta, tb, guard((a, b) => {
+        fn(a, b);
+        const shot = a && a.fireProjectile ? a : b && b.fireProjectile ? b : null;
+        if (shot && shot.active) {
+          window.SPRITES.fx.burst(shot.x, shot.y, shot.trailColor || 0xff8a22, 16);
+          shot.destroy();
+        }
+      }));
       reg.set(tb, c);
       return c;
     },
-    // defeat an enemy (same as stomping it): removes it with a burst
+    // damage an enemy like a stomp does (bosses have props.hp); returns true if it was defeated
+    hurt(enemy, amount = 1) {
+      if (!enemy || !enemy.active || !enemy.def || enemy.def.type !== "enemy") return false;
+      if (typeof scene.damageEnemy === "function") return scene.damageEnemy(enemy, amount);
+      enemy.disableBody(true, true);
+      return true;
+    },
+    // remove an enemy instantly, whatever its hp
     defeat(enemy) {
       if (!enemy || !enemy.active) return;
+      if (typeof scene.defeatEnemy === "function") { scene.defeatEnemy(enemy); return; }
       if (window.SPRITES && window.SPRITES.fx) window.SPRITES.fx.burst(enemy.x, enemy.y, 0xffffff, 10);
       enemy.disableBody(true, true);
     },

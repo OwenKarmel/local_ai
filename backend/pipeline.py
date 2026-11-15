@@ -10,6 +10,7 @@ from .intents import compile_intent, drop_unasked, intent_schema, parse_intent
 from .llm import STRUCTURED_SAMPLER, LLMError, chat, short_name
 from .patcher import PatchError, extract_json
 from .prompts import intent_messages, retry_message
+from . import codegen, config
 from .reach import gap_violations, reach
 from .schema import Level
 
@@ -43,13 +44,30 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None,
     if trace is not None:
         trace.update(prompt=messages, schema=schema, attempts=attempts)
 
+    esc = {"to": None, "attempts": 0, "lines": None, "sandbox": "not run", "latency_ms": 0, "code": None}
+
+    def stats(status, patch):
+        model_steps = [s for s in steps if s["step"] == "model"]
+        ms = int((time.perf_counter() - t0) * 1000)
+        chain = name.split("-mlx")[0].replace("Ternary-Bonsai-2-", "") + (f" → {esc['to']}" if esc["to"] else "")
+        attempts = len(model_steps) + esc["attempts"]
+        parts = [chain, f"{ms / 1000:.0f} s"]
+        if esc["lines"]:
+            parts.append(f"{esc['lines']} lines")
+        parts.append(f"attempt {max(1, attempts if not esc['to'] else esc['attempts'])}")
+        return {"model": name, "escalated_to": esc["to"], "latency_ms": ms, "attempts": attempts,
+                "ops_count": len(patch or []), "code_lines": esc["lines"], "tokens_in": None, "tokens_out": None,
+                "tokens_per_sec": None, "checker": "refused" if status == "refused" and not esc["to"] else "passed" if status == "applied" else "not run",
+                "sandbox": esc["sandbox"], "offline": True, "label": " · ".join(parts)}
+
     def out(status, new_level=None, patch=None, spoken="", reason=None):
         if trace is not None:
             trace["outcome"] = {"status": status, "spoken": spoken, "reason": reason, "patch": patch or [],
                                 "latency_ms": int((time.perf_counter() - t0) * 1000), "steps": steps}
         return {"ok": status == "applied", "status": status, "route": ROUTE, "model": name,
                 "latency_ms": int((time.perf_counter() - t0) * 1000), "patch": patch or [],
-                "level": (new_level or level).model_dump(), "spoken": spoken, "reason": reason, "log": steps}
+                "level": (new_level or level).model_dump(), "spoken": spoken, "reason": reason, "log": steps,
+                "stats": stats(status, patch)}
 
     for attempt in range(1 + MAX_MODEL_RETRIES):
         last = attempt == MAX_MODEL_RETRIES
@@ -80,10 +98,35 @@ def run_command(level: Level, text: str, model: str, player: dict | None = None,
                                  + "\nDo only what the command asks; \"asked\" must quote the command's words.")
             if not intent.ops:
                 raise PatchError("The reply has no ops. Return at least one operation, or one 'unsupported' op explaining what can't be done.")
+            code_ops = [o for o in intent.ops if o.op == "write_code"]
+            intent.ops = [o for o in intent.ops if o.op != "write_code"]
             ed = compile_intent(level, intent, player)
             cstep["repairs"] = dropped + list(ed.repairs)
             new_level = ed.result()
             errors = list(ed.errors)
+            if code_ops and not errors:
+                # Escalation: the level model asked for new code; the code model writes it (backend/codegen.py).
+                op = code_ops[0]
+                g = codegen.generate(text, op.what)
+                esc.update(to=g["model"].split("-mlx")[0].replace("Ternary-Bonsai-2-", ""), attempts=g["attempts"],
+                           lines=g["lines"] or None, latency_ms=g["latency_ms"], code=g["code"])
+                steps.append({"step": "model", "model": g["model"], "latency_ms": g["latency_ms"],
+                              "errors": [g["error"]] if g["error"] else [], "repairs": ["code repaired once"] if g["attempts"] > 1 else []})
+                att["codegen"] = g
+                if g["ok"]:
+                    esc["sandbox"] = "syntax ok"
+                    abilities = dict(ed.d.get("abilities") or {})
+                    abilities[g["name"]] = {"enabled": True, "kind": op.kind, "keys": g["keys"], "code": g["code"],
+                                            "lines": g["lines"], "model": g["model"], "what": op.what}
+                    ed.d["abilities"] = abilities
+                    keys = f" (press {' or '.join(g['keys'])})" if g["keys"] else ""
+                    ed.done.append(f"wrote new code: {op.what.rstrip('.')}{keys}")
+                    new_level = ed.result()
+                else:
+                    esc["sandbox"] = "failed"
+                    if not ed.diff():
+                        return out("error", spoken="Sorry, I couldn't write working code for that.",
+                                   reason=f"Code model failed after {g['attempts']} attempt(s): {g['error']}")
             # Lightweight safety layer (backend/reach.py): no gap wider than the player can jump.
             too_far = gap_violations(ld, new_level.model_dump())
             if too_far:

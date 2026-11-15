@@ -25,7 +25,7 @@ def short_name(model: str) -> str:
 
 
 def chat(model: str, messages: list[dict], schema: dict | None = None, max_tokens: int = 1024, timeout: float = 120,
-         sampler: dict | None = None) -> dict:
+         sampler: dict | None = None, base_url: str | None = None) -> dict:
     """Returns {"text", "model", "latency_ms", "usage"}. Raises LLMError if the server is unreachable/errs."""
     body = {"model": model, "messages": messages, "max_tokens": max_tokens, **(sampler or SAMPLER)}
     if config.NO_THINKING:
@@ -34,9 +34,9 @@ def chat(model: str, messages: list[dict], schema: dict | None = None, max_token
         body["response_format"] = {"type": "json_schema", "json_schema": {"name": "patch", "schema": schema, "strict": True}}
     t0 = time.perf_counter()
     try:
-        r = httpx.post(f"{config.BONSAI_BASE_URL}/chat/completions", json=body, timeout=timeout)
+        r = httpx.post(f"{base_url or config.BONSAI_BASE_URL}/chat/completions", json=body, timeout=timeout)
     except httpx.HTTPError as e:
-        raise LLMError(f"Model server not reachable at {config.BONSAI_BASE_URL} ({type(e).__name__}). Is mlx_vlm.server running?")
+        raise LLMError(f"Model server not reachable at {base_url or config.BONSAI_BASE_URL} ({type(e).__name__}). Is mlx_vlm.server running?")
     latency_ms = int((time.perf_counter() - t0) * 1000)
     if r.status_code != 200:
         raise LLMError(f"Model server error {r.status_code}: {r.text[:300]}")

@@ -26,11 +26,18 @@ BEHAVIOR_PROPS = {
         "shot_speed": ("how fast each projectile flies, px/s", 80, 600),
     },
 }
+PLATFORM_PROPS = {
+    "motion_dx": ("horizontal travel in tiles (signed)", -12, 12),
+    "motion_dy": ("vertical travel in tiles (signed)", -8, 8),
+    "motion_period": ("seconds for a full back-and-forth trip", 1, 20),
+}
 
 
 def prop_spec(e: dict, key: str) -> tuple[str, float, float] | None:
     """(meaning, min, max) for a prop of entity e, or None if no known behavior reads it."""
     spec = ENEMY_PROPS.get(key) if e["type"] == "enemy" else None
+    if e["type"] == "platform":
+        spec = PLATFORM_PROPS.get(key)
     for b in e.get("behaviors", []):
         spec = spec or BEHAVIOR_PROPS.get(b, {}).get(key)
     if spec is None:
@@ -67,7 +74,7 @@ def support_of(e: dict, ents: list[dict]) -> dict | None:
     for p in ents:
         if p["type"] == "platform" and p["y"] == e["y"] + e["h"] and overlaps_x(p, e["x"], e["x"] + e["w"]):
             return p
-    return None
+    return spec
 
 
 def roam_span(e: dict, ents: list[dict]) -> dict:
@@ -210,11 +217,13 @@ def summary_text(level: dict, player: dict | None = None) -> str:
     used = {b for e in ents for b in e["behaviors"] if b in BEHAVIOR_PROPS}
     if any(e["type"] == "enemy" and (e["props"].get("hp", 1) > 1 or set(e["behaviors"]) - {"patrol"}) for e in ents):
         used.add("enemy")
+    if any(e["type"] == "platform" for e in ents):
+        used.add("platform")
     if used - {"patrol"}:  # the patrol keys are already in the prompt; only spell out the others
         L.append("Behavior props (set_property keys, allowed range):")
         for b in sorted(used):
-            spec = ENEMY_PROPS if b == "enemy" else BEHAVIOR_PROPS[b]
-            name = "any enemy" if b == "enemy" else b
+            spec = ENEMY_PROPS if b == "enemy" else PLATFORM_PROPS if b == "platform" else BEHAVIOR_PROPS[b]
+            name = "any enemy" if b == "enemy" else "any platform" if b == "platform" else b
             L.append(f"  {name}: " + "; ".join(f"{k} = {d} ({lo:g}-{hi:g})" if not isinstance(hi, str) else f"{k} = {d} ({lo:g} to {hi} - 1)"
                                             for k, (d, lo, hi) in spec.items()))
     return "\n".join(L)
