@@ -7,7 +7,7 @@
   "lava": "lava",
   "enemy": "enemy_slime_purple",
   "coin": "coin_gold",
-  "double_jump": "powerup_star",
+  "double_jump": "powerup_star_purple",
   "grow": "powerup_mushroom_red",
   "player_big": "player_big_green",
   "goal": "flag_green",
@@ -751,7 +751,18 @@
    "name": "powerup_star",
    "type": "powerup",
    "file": "star.png",
-   "description": "gold star (default double-jump power-up)",
+   "description": "gold star",
+   "size": [
+    64,
+    64
+   ],
+   "scale": 0.5
+  },
+  {
+   "name": "powerup_star_purple",
+   "type": "powerup",
+   "file": "star_purple.png",
+   "description": "purple star (default double-jump power-up)",
    "size": [
     64,
     64

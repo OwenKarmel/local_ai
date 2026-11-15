@@ -40,7 +40,8 @@ gem_green: green gem (collectible, counts as a coin)
 gem_red: red gem (collectible, counts as a coin)
 gem_yellow: yellow gem (collectible, counts as a coin)
 [powerup]
-powerup_star: gold star (default double-jump power-up)
+powerup_star: gold star
+powerup_star_purple: purple star (default double-jump power-up)
 powerup_heart: red heart
 powerup_spring: metal spring
 powerup_mushroom_red: red mushroom (default grow power-up)
