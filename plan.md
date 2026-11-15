@@ -33,6 +33,7 @@ One branch and PR per task. Acceptance is playing the feature in the browser. No
 | 7 | Pixel V microphone icon | 7 | `frontend/game.js`, `frontend/voice.js` | Listening state works in normal and demo modes | PR #23; browser checked in `?demo` |
 | 8 | Fading command result box | 8 | `frontend/game.js`, `frontend/voice.js` | Latency and model path visible in normal and demo modes | PR #23; browser checked in `?demo` |
 | 9 | Generic confetti win effect | 9 | `frontend/sprites.js`, `frontend/game.js` | Multicolor Phaser particles burst on each win | PR #23; browser checked; 120 particles |
+| 10 | Speed up fireball commands without hardcoding. (a) **Cache of model-written code:** the first time the 9B writes an ability its code is saved, keyed by the 4B's description of what to build (fuzzy word match), and reused instantly when a similar request comes in; only code that passed the syntax and load checks is stored, and nothing is pre-written. (b) **Retest the 4B as the code writer.** | 4 | `backend/codegen.py`, `backend/pipeline.py` | A repeat fireball applies in about 1 s; the HUD says "(saved code)"; first-time fireball ≤ ~20 s | (a) built and unit-tested on Ashwin's local branch `t6-cache` (commit 2e357fc, **not pushed**: it's based on `t6-escalation`, so it needs rebasing after #23). (b) syntax/load checks pass 5/5 on the 4B at about 10.5 s each; behavior **not** browser-tested |
 
 ## Later
 Not needed for any beat. Don't start these until every beat passes.
@@ -147,6 +148,8 @@ Marked `STUB: replaced by <task ID>` in `backend/main.py`. No model calls.
 ## Decisions log
 | Time | Decision | Reason |
 |---|---|---|
+| 11-14 22:30 | **Fireball speed-up: cache model-written code + retest the 4B as the code writer** (task 10). The 4B decides a command needs code; the 9B writes it (4B → 9B, about 30–35 s the first time). The cache makes repeats near-instant while every ability is still model-written and checked. Known limit: fuzzy matching on very short descriptions can reuse the wrong entry (e.g. "enemies that damage the player" matched a fireball entry); the HUD label says "(saved code)" so it's visible, and the cache is a gitignored file that can be deleted | The 4B alone failed every fireball attempt earlier; the 9B passes 5/5. Escalation needs two model calls, which is the slow part |
+| 11-14 22:30 | Experiments paused (priority change: no training, batch evals or model experiments; verify by playing). The 4B code-writer retest above was run just before the change and is not extended | Time before the deadline; browser playthroughs verify features |
 | 11-14 | Level in tile units, entities as a flat list with ids | Easy for a small model to refer to by id |
 | 11-14 | Patches, never full levels | Smaller outputs, fewer model errors, easy undo |
 | 11-14 | Level state lives on backend, in memory | One source of truth for version history |
