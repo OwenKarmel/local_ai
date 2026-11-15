@@ -8,6 +8,7 @@ Needs Pillow (only to make tintable white variants). Outputs:
     frontend/assets/catalog.txt    (name: description, for model prompts)
 """
 import json
+import random
 import shutil
 import sys
 from pathlib import Path
@@ -51,6 +52,30 @@ for color in ["green", "pink", "yellow", "purple", "beige"]:
     add(f"player_{color}", "player", use("c", p + "idle.png"), f"{color} alien astronaut, the player character", scale=0.375,
         animations={"idle": anim("c", [p + "idle.png"], 1), "run": anim("c", [p + "walk_a.png", p + "walk_b.png"], 8),
                     "jump": anim("c", [p + "jump.png"], 1), "hit": anim("c", [p + "hit.png"], 1)})
+
+# Pixel-camo alien: recolor green Kenney frames in-place while retaining alpha, outlines and shading.
+camo_palette = [(83, 100, 49), (54, 74, 43), (112, 119, 66), (41, 57, 37)]
+for frame in ["idle", "walk_a", "walk_b", "jump", "hit"]:
+    src = Image.open(SPR / f"character_green_{frame}.png").convert("RGBA")
+    rng = random.Random(0xC4110A7 + sum(frame.encode()))
+    seeds = [(rng.randrange(src.width), rng.randrange(src.height), rng.randrange(4), rng.uniform(.7, 1.3)) for _ in range(48)]
+    pixels = src.load()
+    for y in range(src.height):
+        for x in range(src.width):
+            r, g, b, a = pixels[x, y]
+            lum = .299 * r + .587 * g + .114 * b
+            if a < 6 or lum < 48: continue
+            _, _, color, shade = min(seeds, key=lambda q: (x-q[0])**2 + 1.13*(y-q[1])**2)
+            brightness = max(.48, min(1.35, lum / 135 * shade))
+            pixels[x, y] = (*[round(min(255, c * brightness)) for c in camo_palette[color]], a)
+    name = f"character_camo_{frame}.png"
+    src.save(SPR / name)
+    used.add(name)
+add("player_camo", "player", "character_camo_idle.png", "green alien astronaut in a pixel camo pattern, the player character", scale=0.375,
+    animations={"idle": {"frames": ["character_camo_idle.png"], "fps": 1},
+                "run": {"frames": ["character_camo_walk_a.png", "character_camo_walk_b.png"], "fps": 8},
+                "jump": {"frames": ["character_camo_jump.png"], "fps": 1},
+                "hit": {"frames": ["character_camo_hit.png"], "fps": 1}})
 
 # Grown player for the grow power-up: taller green alien (CC0 derivative, see tools/big_player.py).
 big = big_player.make(SPR, "green")
