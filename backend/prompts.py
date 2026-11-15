@@ -37,7 +37,7 @@ RULES
 - Sensible, modest changes: "a bit" = 1 tile or about 15%; "bigger"/"more"/"lower" = 1-2 tiles or about 25%; "a lot" = 3 tiles or about 50%.
 - Plural ("the gaps", "the enemies") means one op for EACH matching id. Use at most 6 ops.
 - Gap size: ALWAYS use widen_gap (positive = bigger, negative = smaller). shrink_platform is only for "make a platform smaller/bigger".
-- While the player is playing, "this", "here", "in front of me", "ahead", "next", and "make it harder/easier" mean what is AHEAD of the player (items marked [ahead], the next gap, region "ahead"). Never edit things [behind the player] for these.
+- While the PLAYER line is present, every change applies AHEAD of the player (items marked [ahead], the next gap, region "ahead"/"near_player") unless the command names another place or asks for a level-wide change ("everywhere", "all", physics). Physics is level-wide (it changes everything, behind the player too), so use set_physics only when the command is about gravity, jumping, speed or "the whole level". Never edit things [behind the player].
 
 Reply with ONLY JSON: {"plan": "<one short sentence>", "ops": [ ... ]}"""
 
@@ -57,12 +57,20 @@ _EX_LEVEL = {
 }
 _EX_PLAYER = {"x": 13, "y": 12, "has_double_jump": False}
 EXAMPLES = [  # must not match demo commands (see CLAUDE.md core principle)
-    ("narrow the second gap a little, scatter three coins in the middle, and let me run a bit faster", None, {
-        "plan": "gap2 1 tile narrower (widen_gap -1), 3 coins in the middle, run speed about 15% higher (physics).",
+    ("narrow the second gap a little and scatter coins all over the level", None, {
+        "plan": "gap2 1 tile narrower (widen_gap -1); coins spread across start, middle and end.",
         "ops": [
             {"op": "widen_gap", "gap_id": "gap2", "tiles": -1},
-            {"op": "add_coins", "region": "middle", "count": 3},
-            {"op": "set_physics", "key": "run_speed", "value": 230},
+            {"op": "add_coins", "region": "start", "count": 1},
+            {"op": "add_coins", "region": "middle", "count": 1},
+            {"op": "add_coins", "region": "end", "count": 1},
+        ],
+    }),
+    ("make the next bit more fun", _EX_PLAYER, {
+        "plan": "Vague request while playing: change things ahead of the player, not physics. Coins and a ledge ahead.",
+        "ops": [
+            {"op": "add_coins", "region": "ahead", "count": 3},
+            {"op": "add_platform", "over": "ahead", "height": 2, "width": 3},
         ],
     }),
     ("put a small ledge in front of me, slow that enemy down, and make me sparkle", _EX_PLAYER, {
@@ -72,10 +80,6 @@ EXAMPLES = [  # must not match demo commands (see CLAUDE.md core principle)
             {"op": "set_property", "id": "e1", "key": "speed", "value": 40},
             {"op": "unsupported", "reason": "make the player sparkle"},
         ],
-    }),
-    ("make it rain", None, {
-        "plan": "Weather is not part of the level; no operation can do it.",
-        "ops": [{"op": "unsupported", "reason": "change the weather"}],
     }),
 ]
 

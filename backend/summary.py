@@ -77,7 +77,7 @@ def summary_text(level: dict, player: dict | None = None) -> str:
 
     L = [f"Level: {a['W']} tiles wide, {a['H']} tall. The player runs left to right from the start to the goal."]
     L.append("Regions: " + ", ".join(f"{k} = x {lo}-{hi - 1}" for k, (lo, hi) in a["regions"].items()))
-    L.append(f"Physics: gravity {ph['gravity']:g}, jump_velocity {ph['jump_velocity']:g}, run_speed {ph['run_speed']:g}")
+    L.append(f"Physics (level-wide): gravity {ph['gravity']:g}, jump_velocity {ph['jump_velocity']:g}, run_speed {ph['run_speed']:g}")
     ab = [k for k, v in level.get("abilities", {}).items() if v.get("enabled")]
     L.append("Abilities on: " + (", ".join(ab) if ab else "none"))
     if player:
